@@ -9,11 +9,11 @@ description = "Bootstrap: the ikigai kernel running in the browser via WebAssemb
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-# Local path dep on the unpublished core (sibling checkout). This demo is a
-# standalone proof, intentionally not part of either repo's CI; once ikigai-core
-# is published it folds into ikigai-cli via crates.io.
-ikigai-core = { path = "../ikigai-core/crates/ikigai-core" }
-ikigai-vocab = { path = "../ikigai-core/crates/ikigai-vocab" }
+# Published crates from crates.io (graduated off the sibling path deps once
+# ikigai-core/ikigai-vocab were published at 0.1.0). This demo is a standalone
+# proof, intentionally not part of either repo's CI.
+ikigai-core = "0.1"
+ikigai-vocab = "0.1"
 async-trait = "0.1"
 wasm-bindgen = "=0.2.108"
 wasm-bindgen-futures = "0.4"
