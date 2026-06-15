@@ -2,6 +2,7 @@
 /dist-node
 /dist/*.js
 /dist/*.wasm
+/dist/*.d.ts
 Cargo.lock
 .DS_Store
 *~
