@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>A page assembled by ikigai</title>
+<style>
+  body { font: 15px/1.65 -apple-system, system-ui, sans-serif; max-width: 760px; margin: 36px auto; padding: 0 18px; color: #1a1a1a; }
+  h1 { color: #1f7199; font-size: 23px; margin-bottom: 2px; }
+  .sub { color: #555; margin-top: 0; }
+  article { border: 1px solid #dfe2e5; border-radius: 10px; padding: 4px 18px 16px; margin: 18px 0; }
+  code { color: #7a3e9d; font: 12.5px ui-monospace, Menlo, monospace; }
+  [data-iki], [data-iki-meta] { background: #eef7ee; border-radius: 4px; padding: 0 4px; }
+  pre { background: #f6f8fa; border: 1px solid #dfe2e5; border-radius: 8px; padding: 11px; white-space: pre-wrap; }
+  pre[data-iki-meta] { background: #f6f8fa; }
+  .slot-label { color: #888; font: 11px ui-monospace, Menlo, monospace; }
+  textarea { width: 100%; height: 66px; font: 13px/1.5 ui-monospace, Menlo, monospace; padding: 8px; box-sizing: border-box; border: 1px solid #dfe2e5; border-radius: 6px; }
+  button { font-size: 14px; padding: 7px 13px; margin: 10px 8px 4px 0; cursor: pointer; border: 1px solid #c3c8ce; border-radius: 6px; background: #fff; }
+  button:hover { background: #f1f3f5; }
+  h3 { font-size: 15px; color: #444; margin-top: 26px; }
+</style>
+</head>
+<body>
+<h1>A page assembled by ikigai</h1>
+<p class="sub">Every highlighted value below is a <b>resource the in-browser kernel resolved on load</b> — no fetch, no server. The HTML just declares which resource fills each slot (<code>data-iki</code> = SOURCE, <code>data-iki-meta</code> = META). Resolution, the endpoints, and the cache all run in this page, in WebAssembly.</p>
+
+<article>
+  <p><span class="slot-label">data-iki="urn:fn:toUpper" data-in="resource-oriented computing"</span><br>
+     Shout it: <b data-iki="urn:fn:toUpper" data-in="resource-oriented computing">…</b></p>
+
+  <p><span class="slot-label">data-iki="urn:demo:greeter"</span><br>
+     <span data-iki="urn:demo:greeter">…</span></p>
+
+  <h3>The greeter endpoint, describing itself</h3>
+  <p class="slot-label">data-iki-meta="urn:demo:greeter" (META → text/plain, rendered in-page)</p>
+  <pre data-iki-meta="urn:demo:greeter">…</pre>
+</article>
+
+<h3>Interactive</h3>
+<textarea id="in">alpha
+beta
+gamma</textarea>
+<div>
+  <button id="up">SOURCE urn:fn:toUpper</button>
+  <button id="rev">SOURCE urn:fn:reverseList</button>
+</div>
+<pre id="out"></pre>
+
+<script type="module">
+import init, { issue, describe } from './ikigai_web_demo.js';
+const $ = id => document.getElementById(id);
+await init();
+
+// Assemble the page: fill every declared slot from the kernel.
+for (const el of document.querySelectorAll('[data-iki]')) {
+  try { el.textContent = await issue(el.dataset.iki, el.dataset.in ?? ''); }
+  catch (e) { el.textContent = 'error: ' + e; }
+}
+for (const el of document.querySelectorAll('[data-iki-meta]')) {
+  try { el.textContent = await describe(el.dataset.ikiMeta, 'text/plain'); }
+  catch (e) { el.textContent = 'error: ' + e; }
+}
+
+// Interactive corner.
+async function run(target) {
+  try { $('out').textContent = await issue(target, $('in').value); }
+  catch (e) { $('out').textContent = 'error: ' + e; }
+}
+$('up').onclick = () => run('urn:fn:toUpper');
+$('rev').onclick = () => run('urn:fn:reverseList');
+</script>
+</body>
+</html>

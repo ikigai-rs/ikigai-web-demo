@@ -1,0 +1,24 @@
+[package]
+name = "ikigai-web-demo"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "Bootstrap: the ikigai kernel running in the browser via WebAssembly."
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Local path dep on the unpublished core (sibling checkout). This demo is a
+# standalone proof, intentionally not part of either repo's CI; once ikigai-core
+# is published it folds into ikigai-cli via crates.io.
+ikigai-core = { path = "../ikigai-core/crates/ikigai-core" }
+ikigai-vocab = { path = "../ikigai-core/crates/ikigai-vocab" }
+async-trait = "0.1"
+wasm-bindgen = "=0.2.108"
+wasm-bindgen-futures = "0.4"
+console_error_panic_hook = "0.1"
+
+[profile.release]
+opt-level = "z"
+lto = true

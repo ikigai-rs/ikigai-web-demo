@@ -1,0 +1,9 @@
+/target
+/dist-node
+/dist/*.js
+/dist/*.wasm
+Cargo.lock
+.DS_Store
+*~
+*.swp
+*~undo-tree~
