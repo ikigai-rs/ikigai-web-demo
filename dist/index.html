@@ -16,22 +16,92 @@
   aside.about { border-left: 3px solid #1f7199; background: #f6f9fb; border-radius: 6px; padding: 2px 16px 12px; margin: 16px 0; }
   .literal { color: #555; }
   .literal b { background: none; padding: 0; }
+
+  /* The in-page terminal — the CLI Engine running on this page's kernel. */
+  .cli-mount { margin-top: 30px; }
+  .cli-mount h3 { color: #1f7199; }
+  ikigai-cli { display: block; background: #0f1419; border-radius: 10px; padding: 12px 14px; font: 13.5px/1.55 ui-monospace, Menlo, monospace; color: #d7dde3; }
+  .cli-transcript { max-height: 320px; overflow-y: auto; }
+  .cli-line { margin: 0; white-space: pre-wrap; word-break: break-word; font: inherit; }
+  .cli-echo { color: #6cb6ff; }
+  .cli-error { color: #ff8a8a; }
+  .cli-help { color: #aab2bb; }
+  .cli-cache { color: #65727f; font-style: italic; margin-bottom: 7px; }
+  .cli-hint { color: #65727f; }
+  .cli-inputline { display: flex; align-items: baseline; gap: 7px; margin-top: 5px; border-top: 1px solid #1f2730; padding-top: 8px; }
+  .cli-prompt { color: #6cb6ff; }
+  .cli-input { flex: 1; background: transparent; border: 0; outline: none; color: #d7dde3; font: inherit; padding: 0; }
+  ikigai-cli code { color: #c39be8; }
 </style>
 </head>
 <body>
 <main id="app">…</main>
 
 <script type="module">
-import init, { compose } from './ikigai_web_demo.js';
+import init, { evalLine } from './ikigai_web_demo.js';
+
+// The live terminal: a custom element that self-wires when the composed HTML
+// (which contains <ikigai-cli>) is inserted. It drives the same Engine as the page.
+class IkigaiCli extends HTMLElement {
+  connectedCallback() {
+    if (this._wired) return;
+    this._wired = true;
+    this.innerHTML =
+      '<div class="cli-transcript"></div>' +
+      '<div class="cli-inputline"><span class="cli-prompt">ikigai&gt;</span>' +
+      '<input class="cli-input" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="ikigai command"></div>';
+    this.transcript = this.querySelector('.cli-transcript');
+    this.input = this.querySelector('.cli-input');
+    this.history = [];
+    this.hpos = 0;
+    this.print('Type a request, or `help`.  e.g.  source urn:fn:toUpper hello | urn:fn:toUpper', 'hint');
+    this.input.addEventListener('keydown', (e) => this.onKey(e));
+    this.addEventListener('click', () => this.input.focus());
+  }
+  onKey(e) {
+    if (e.key === 'Enter') {
+      const line = this.input.value;
+      this.input.value = '';
+      this.print('ikigai> ' + line, 'echo');
+      if (line.trim()) { this.history.push(line); this.hpos = this.history.length; }
+      this.run(line);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (this.hpos > 0) this.input.value = this.history[--this.hpos];
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (this.hpos < this.history.length - 1) this.input.value = this.history[++this.hpos];
+      else { this.hpos = this.history.length; this.input.value = ''; }
+    }
+  }
+  run(line) {
+    let r;
+    try { r = JSON.parse(evalLine(line)); }
+    catch (err) { this.print('internal error: ' + err, 'error'); return; }
+    if (r.kind === 'noop') return;
+    if (r.kind === 'quit') { this.print('(quit — reload the page to restart)', 'hint'); this.input.disabled = true; return; }
+    if (r.text) this.print(r.text, r.kind === 'error' ? 'error' : (r.kind === 'help' ? 'help' : 'out'));
+    if (r.cache) this.print(r.cache, 'cache');
+  }
+  print(text, cls) {
+    const pre = document.createElement('pre');
+    pre.className = 'cli-line cli-' + cls;
+    pre.textContent = text;
+    this.transcript.appendChild(pre);
+    this.transcript.scrollTop = this.transcript.scrollHeight;
+  }
+}
+customElements.define('ikigai-cli', IkigaiCli);
+
 await init();
 
-// The whole page is one resource. A single compose() call resolves the page
-// shape and recursively expands every $a{…} marker through the in-browser
-// kernel — no per-slot JavaScript, no fetch, no server.
+// The whole page is one resource: compose it through the Engine and inject the
+// result. The composed HTML contains <ikigai-cli>, which self-wires on insertion.
 try {
-  document.getElementById('app').innerHTML = await compose('urn:data:page');
+  const r = JSON.parse(evalLine('source urn:fn:compose src=urn:data:page'));
+  document.getElementById('app').innerHTML = r.kind === 'output' ? r.text : ('compose error: ' + r.text);
 } catch (e) {
-  document.getElementById('app').textContent = 'compose error: ' + e;
+  document.getElementById('app').textContent = 'error: ' + e;
 }
 </script>
 </body>
