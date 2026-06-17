@@ -3,6 +3,8 @@
 The [ikigai](https://crates.io/crates/ikigai-core) resolution kernel running
 **in the browser** via WebAssembly — no server, no fetch, no JS framework.
 
+**▶ Live demo: <https://ikigai-rs.github.io/ikigai-web-demo/>**
+
 The page **is** a resource. `index.html` is a near-empty shell that makes one call —
 `compose('urn:data:page')` — and drops the result into the body. The kernel resolves
 the page *shape* (HTML) and recursively expands every `$a{<iri>}` transclusion marker
