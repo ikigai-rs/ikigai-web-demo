@@ -1,0 +1,73 @@
+name: Deploy demo to GitHub Pages
+
+# Rebuild and redeploy the WASM demo whenever it changes. (To pick up a new
+# release of an upstream ikigai crate, bump its version in Cargo.toml and push —
+# that's a change here, so it redeploys.) Also runnable on demand.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Let Pages read the deployment token; one deploy at a time.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # --- Pre-publish only -------------------------------------------------
+      # While the demo still path-deps the sibling ikigai-cli checkout
+      # (Cargo.toml `ikigai-engine = { path = "../ikigai-cli/..." }`), it can't
+      # build from a lone checkout. To deploy before the crates are published,
+      # check out BOTH repos as siblings and build from a subdir — replace the
+      # `actions/checkout` above with:
+      #
+      #   - uses: actions/checkout@v4
+      #     with: { path: ikigai-web-demo }
+      #   - uses: actions/checkout@v4
+      #     with: { repository: ikigai-rs/ikigai-cli, ref: main, path: ikigai-cli }
+      #
+      # and add `working-directory: ikigai-web-demo` to the build step so
+      # `../ikigai-cli` resolves. Once ikigai-engine is on crates.io and
+      # Cargo.toml uses a crates.io version, delete all of this — the single
+      # checkout above builds standalone.
+      # ----------------------------------------------------------------------
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      # Prebuilt wasm-bindgen-cli, pinned to the version in Cargo.toml.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen-cli@0.2.108
+
+      - name: Build WASM + JS bindings into dist/
+        run: |
+          cargo build --release --target wasm32-unknown-unknown
+          wasm-bindgen --target web --out-dir dist \
+            target/wasm32-unknown-unknown/release/ikigai_web_demo.wasm
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

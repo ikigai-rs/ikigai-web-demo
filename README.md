@@ -12,8 +12,20 @@ shape may contain further markers, so composition recurses. Resolution, the endp
 the `compose` builtin, and the content-addressed cache all run client-side in WASM. The
 client is ~5 lines of glue — the layout *and* its contents come from the kernel.
 
-It depends on the published [`ikigai-core`](https://crates.io/crates/ikigai-core)
-and [`ikigai-vocab`](https://crates.io/crates/ikigai-vocab) crates, so a fresh
+![The composed page, and the in-page ikigai CLI driving the same kernel](docs/web-cli.png)
+
+The page even carries a live **terminal** — the *same* renderer-agnostic Engine the
+desktop `ikigai` REPL uses, compiled to WASM and driving this page's kernel. It's
+mounted by composition too: a `$a{urn:demo:web-cli}` marker in the page shape resolves
+to an `<ikigai-cli>` element that wires itself up on insertion. Because it shares the
+page's kernel and content-addressed cache, typing `source urn:fn:compose
+src=urn:data:page` into it returns the very page you're reading — reported `cached`,
+since the page already composed it. The whole grammar works in the browser: pipelines
+`|`, map `..`, fork `( a ; b )`, named `key=value` args, plus `compose`, `cache`, and `list`.
+
+It depends on the published [`ikigai-core`](https://crates.io/crates/ikigai-core),
+[`ikigai-vocab`](https://crates.io/crates/ikigai-vocab), and
+[`ikigai-engine`](https://crates.io/crates/ikigai-engine) crates, so a fresh
 checkout builds on its own.
 
 ## Prerequisites

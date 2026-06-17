@@ -14,6 +14,11 @@ crate-type = ["cdylib", "rlib"]
 # proof, intentionally not part of either repo's CI.
 ikigai-core = "0.1.5"  # builtins::compose
 ikigai-vocab = "0.1"
+# The CLI's renderer-agnostic Engine — drives the in-page terminal. Pulls
+# ikigai-resolve transitively for `impl Resolver for Kernel`. Published, so a
+# fresh checkout (and the Pages CI) builds standalone.
+ikigai-engine = "0.1"
+serde_json = "1"  # encode the eval result ({kind, text, cache}) for JS
 async-trait = "0.1"
 wasm-bindgen = "=0.2.108"
 wasm-bindgen-futures = "0.4"
