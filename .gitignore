@@ -1,4 +1,5 @@
 /target
+/.cargo/config.toml   # temporary local-core redirect for pre-publish dev; remove once ikigai-core 0.1.5 is published
 /dist-node
 /dist/*.js
 /dist/*.wasm
