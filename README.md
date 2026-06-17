@@ -79,10 +79,15 @@ The page above hosts the kernel *in the browser*. The companion demo
 (`dist/net.html`) does **not** — it pulls the **same** `urn:data:page` from a kernel
 running in a separate **server process**, over
 [WebTransport](https://developer.mozilla.org/en-US/docs/Web/API/WebTransport)
-(HTTP/3 over QUIC). The browser sends one `compose` request as `ikigai-wire` bytes —
+(HTTP/3 over QUIC). The browser sends the `compose` request as `ikigai-wire` bytes —
 the *same* protocol `ikigai-ipc`/`ikigai-quic` speak — the server composes the page
 remotely, and streams the assembled HTML back. Only the wire codec runs in WASM; the
 kernel is on the other end.
+
+The composed page's terminal is **live too**: each command (`source <iri>`, `compose
+<iri>`, `cache <iri>`, `list`) is its own `ikigai-wire` Call on a fresh WebTransport
+stream, resolved by the remote kernel — so `source urn:fn:toUpper hi` twice shows
+`computed` then `cached`, the *server's* cache.
 
 ```bash
 # build the WASM glue first (steps 1–2 above), then:

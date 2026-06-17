@@ -21,39 +21,48 @@
   .panel button { font-size: 15px; padding: 8px 16px; cursor: pointer; border: 1px solid #1f7199; border-radius: 6px; background: #1f7199; color: #fff; }
   .panel button:disabled { opacity: .5; cursor: default; }
   .status { font: 13px ui-monospace, Menlo, monospace; margin-top: 8px; }
-  .status.ok { color: #1a7f37; }
-  .status.err { color: #b3261e; }
-  .status.work { color: #8a6d00; }
+  .status.ok { color: #1a7f37; } .status.err { color: #b3261e; } .status.work { color: #8a6d00; }
   .net-badge { display: inline-block; font: 12px ui-monospace, Menlo, monospace; background: #eaf3f7; color: #1f7199; border-radius: 4px; padding: 1px 7px; margin-left: 6px; }
+
+  /* The in-page terminal — every command is an ikigai-wire Call over WebTransport. */
+  .cli-mount { margin-top: 30px; } .cli-mount h3 { color: #1f7199; }
+  ikigai-cli { display: block; background: #0f1419; border-radius: 10px; padding: 12px 14px; font: 13.5px/1.55 ui-monospace, Menlo, monospace; color: #d7dde3; }
+  .cli-transcript { max-height: 320px; overflow-y: auto; }
+  .cli-line { margin: 0; white-space: pre-wrap; word-break: break-word; font: inherit; }
+  .cli-echo { color: #6cb6ff; } .cli-error { color: #ff8a8a; } .cli-help { color: #aab2bb; }
+  .cli-cache { color: #65727f; font-style: italic; margin-bottom: 7px; } .cli-hint { color: #65727f; }
+  .cli-inputline { display: flex; align-items: baseline; gap: 7px; margin-top: 5px; border-top: 1px solid #1f2730; padding-top: 8px; }
+  .cli-prompt { color: #6cb6ff; } .cli-input { flex: 1; background: transparent; border: 0; outline: none; color: #d7dde3; font: inherit; padding: 0; }
+  ikigai-cli code { color: #c39be8; }
 </style>
 </head>
 <body>
 
 <div class="panel">
   <strong>ikigai over WebTransport</strong> — this page does <em>not</em> host the kernel. It opens a
-  WebTransport (HTTP/3 / QUIC) connection to a kernel server, sends one <code>compose
-  urn:data:page</code> request as <code>ikigai-wire</code> bytes (the same protocol
-  <code>ikigai-ipc</code>/<code>ikigai-quic</code> speak), and the server composes the page
-  <em>remotely</em> and streams the HTML back. Only the wire codec runs in WASM here — the
-  kernel is on the other end.
+  WebTransport (HTTP/3 / QUIC) connection to a kernel server; the page pull <em>and</em> every terminal
+  command below are <code>ikigai-wire</code> Calls on their own streams (the same protocol
+  <code>ikigai-ipc</code>/<code>ikigai-quic</code> speak). The kernel — and its cache — are on the other end.
   <p style="margin:10px 0 2px;color:#555">Run <code>cargo run --bin ikigai-net-server</code>, paste the
-  printed cert hash, and connect (or open this page with <code>#cert=&lt;hash&gt;</code>):</p>
+  printed cert hash, and connect (or open with <code>#cert=&lt;hash&gt;</code>):</p>
   <input id="cert" placeholder="server cert sha-256 (hex)" autocomplete="off" spellcheck="false">
   <input id="url" value="https://127.0.0.1:4433" autocomplete="off" spellcheck="false">
-  <button id="go">Pull urn:data:page over the network</button>
+  <button id="go">Connect &amp; pull urn:data:page</button>
   <div id="status" class="status"></div>
 </div>
 
 <main id="app"></main>
 
 <script type="module">
-import init, { encodeComposeCall, decodeReply } from './ikigai_web_demo.js';
+import init, { encodeComposeCall, encodeIssue, encodeIsCached, encodeEntries, decodeReply } from './ikigai_web_demo.js';
 await init();
 
 const $ = (id) => document.getElementById(id);
 const status = (msg, cls) => { const s = $('status'); s.textContent = msg; s.className = 'status ' + (cls || ''); };
+const stripq = (s) => (s.length >= 2 && s[0] === '"' && s.endsWith('"')) ? s.slice(1, -1) : s;
 
-// Prefill the cert hash from the URL fragment (#cert=…), if present.
+let wt = null;  // the open WebTransport connection, shared by the pull and the terminal
+
 const frag = new URLSearchParams(location.hash.slice(1));
 if (frag.get('cert')) $('cert').value = frag.get('cert').trim();
 
@@ -66,64 +75,124 @@ const hexToBytes = (hex) => {
 
 async function readAll(readable) {
   const reader = readable.getReader();
-  const chunks = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value); total += value.length;
-  }
-  const out = new Uint8Array(total);
-  let off = 0;
+  const chunks = []; let total = 0;
+  for (;;) { const { done, value } = await reader.read(); if (done) break; chunks.push(value); total += value.length; }
+  const out = new Uint8Array(total); let off = 0;
   for (const c of chunks) { out.set(c, off); off += c.length; }
   return out;
 }
 
-async function pull() {
-  if (typeof WebTransport === 'undefined') {
-    status('This browser has no WebTransport (try Chrome/Edge).', 'err'); return;
-  }
-  const url = $('url').value.trim();
-  const certHex = $('cert').value.trim();
-  if (certHex.length !== 64) { status('Paste the 64-char sha-256 cert hash the server printed.', 'err'); return; }
+// One ikigai-wire Call on its own bidi stream → the decoded { kind, text, cache }.
+async function call(bytes) {
+  const stream = await wt.createBidirectionalStream();
+  const writer = stream.writable.getWriter();
+  await writer.write(bytes);
+  await writer.close();
+  return JSON.parse(decodeReply(await readAll(stream.readable)));
+}
 
+const HELP = [
+  'commands (each one is a Call to the remote kernel over WebTransport):',
+  '  source <iri> [input] [k=v …]   resolve a resource (input fills `in`)',
+  '  compose <iri>                  source urn:fn:compose src=<iri>',
+  '  cache <iri> [input]            is it cached on the server? (no resolve)',
+  '  list                           the resources bound on the server',
+  '  help',
+  'try:  source urn:fn:toUpper hello   ·   compose urn:data:page   ·   list',
+].join('\n');
+
+// Turn a REPL line into Call bytes (or a {help}/{error} marker).
+function buildCall(line) {
+  const t = line.trim();
+  if (t === 'list' || t === 'ls') return encodeEntries();
+  if (t === 'help' || t === '?') return { help: true };
+  const m = t.match(/^(source|src|cache|compose)\s+(\S+)\s*(.*)$/);
+  if (!m) return { error: 'try: source <iri> [input] [k=v] · compose <iri> · cache <iri> · list · help' };
+  let cmd = m[1], iri = m[2], rest = m[3], args = {};
+  if (cmd === 'compose') { args.src = iri; iri = 'urn:fn:compose'; cmd = 'source'; }
+  else {
+    const positional = [];
+    for (const tok of (rest.match(/[^\s"]+|"[^"]*"/g) || [])) {
+      const eq = tok.indexOf('=');
+      if (eq > 0 && tok[0] !== '"') args[tok.slice(0, eq)] = stripq(tok.slice(eq + 1));
+      else positional.push(stripq(tok));
+    }
+    if (positional.length) args.in = positional.join(' ');
+  }
+  const bytes = (cmd === 'cache' ? encodeIsCached : encodeIssue)(iri, JSON.stringify(args));
+  return bytes.length ? bytes : { error: 'could not encode (bad iri?)' };
+}
+
+// The in-page terminal: the <ikigai-cli> the composed page mounts, wired to send
+// each command as a Call over the shared WebTransport connection.
+class IkigaiCli extends HTMLElement {
+  connectedCallback() {
+    if (this._wired) return; this._wired = true;
+    this.innerHTML =
+      '<div class="cli-transcript"></div>' +
+      '<div class="cli-inputline"><span class="cli-prompt">ikigai@remote&gt;</span>' +
+      '<input class="cli-input" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="ikigai command"></div>';
+    this.transcript = this.querySelector('.cli-transcript');
+    this.input = this.querySelector('.cli-input');
+    this.history = []; this.hpos = 0;
+    this.print('Connected to a remote kernel over WebTransport. Type `help`. e.g.  compose urn:data:page', 'hint');
+    this.input.addEventListener('keydown', (e) => this.onKey(e));
+    this.addEventListener('click', () => this.input.focus());
+  }
+  onKey(e) {
+    if (e.key === 'Enter') {
+      const line = this.input.value; this.input.value = '';
+      this.print('ikigai@remote> ' + line, 'echo');
+      if (line.trim()) { this.history.push(line); this.hpos = this.history.length; }
+      this.run(line);
+    } else if (e.key === 'ArrowUp') { e.preventDefault(); if (this.hpos > 0) this.input.value = this.history[--this.hpos]; }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); if (this.hpos < this.history.length - 1) this.input.value = this.history[++this.hpos]; else { this.hpos = this.history.length; this.input.value = ''; } }
+  }
+  async run(line) {
+    if (!line.trim()) return;
+    if (!wt) { this.print('not connected', 'error'); return; }
+    const c = buildCall(line);
+    if (c.help) { this.print(HELP, 'help'); return; }
+    if (c.error) { this.print(c.error, 'error'); return; }
+    try {
+      const r = await call(c);
+      if (r.text) this.print(r.text, r.kind === 'error' ? 'error' : 'out');
+      if (r.cache) this.print(r.cache, 'cache');
+    } catch (e) { this.print('transport error: ' + e, 'error'); }
+  }
+  print(text, cls) {
+    const pre = document.createElement('pre');
+    pre.className = 'cli-line cli-' + cls; pre.textContent = text;
+    this.transcript.appendChild(pre); this.transcript.scrollTop = this.transcript.scrollHeight;
+  }
+}
+customElements.define('ikigai-cli', IkigaiCli);
+
+async function connect() {
+  if (typeof WebTransport === 'undefined') { status('This browser has no WebTransport (try Chrome/Edge).', 'err'); return; }
+  const url = $('url').value.trim(), certHex = $('cert').value.trim();
+  if (certHex.length !== 64) { status('Paste the 64-char sha-256 cert hash the server printed.', 'err'); return; }
   $('go').disabled = true;
   try {
     status('opening WebTransport to ' + url + ' …', 'work');
-    const wt = new WebTransport(url, {
-      serverCertificateHashes: [{ algorithm: 'sha-256', value: hexToBytes(certHex) }],
-    });
+    wt = new WebTransport(url, { serverCertificateHashes: [{ algorithm: 'sha-256', value: hexToBytes(certHex) }] });
     await wt.ready;
-
-    status('connected — sending compose(urn:data:page) over a bidi stream …', 'work');
-    const stream = await wt.createBidirectionalStream();
-    const writer = stream.writable.getWriter();
-    await writer.write(encodeComposeCall('urn:data:page'));
-    await writer.close();                       // signal end-of-request
-
-    const replyBytes = await readAll(stream.readable);
-    const r = JSON.parse(decodeReply(replyBytes));
-    wt.close();
-
-    if (r.kind === 'output') {
-      $('app').innerHTML = r.text;
-      status('pulled ' + replyBytes.length + ' bytes over the network — composed remotely, served ' + (r.cache || '?') + ' ✓', 'ok');
-      // Tag the heading so it's obvious this came over the wire.
-      const h1 = $('app').querySelector('h1');
-      if (h1) h1.insertAdjacentHTML('beforeend', '<span class="net-badge">over WebTransport</span>');
-    } else {
-      status('server replied with an error: ' + r.text, 'err');
-    }
+    status('connected — pulling compose(urn:data:page) over the wire …', 'work');
+    const r = await call(encodeComposeCall('urn:data:page'));   // the page pull
+    if (r.kind !== 'output') { status('server error: ' + r.text, 'err'); $('go').disabled = false; return; }
+    $('app').innerHTML = r.text;                                // injects <ikigai-cli> → terminal goes live
+    const h1 = $('app').querySelector('h1');
+    if (h1) h1.insertAdjacentHTML('beforeend', '<span class="net-badge">over WebTransport</span>');
+    status('page pulled (' + (r.cache || '?') + ') — the terminal below is live on the remote kernel ✓', 'ok');
   } catch (e) {
-    status('failed: ' + e + '  (is the server running, and the cert hash current? it rotates each run)', 'err');
-  } finally {
+    wt = null;
+    status('failed: ' + e + '  (server running? cert hash current? it rotates each run)', 'err');
     $('go').disabled = false;
   }
 }
 
-$('go').addEventListener('click', pull);
-// Auto-pull if the cert came in via the URL fragment.
-if (frag.get('cert')) pull();
+$('go').addEventListener('click', connect);
+if (frag.get('cert')) connect();
 </script>
 </body>
 </html>

@@ -209,8 +209,24 @@ pub fn eval(line: String) -> String {
 // that must match the server byte-for-byte: the ikigai-wire `Call`/`Reply`
 // codec (the same protocol ikigai-ipc and ikigai-quic speak). No kernel here.
 
-/// Encode a `compose src=<src>` request as ikigai-wire `Call` bytes, to send to
-/// the server over a WebTransport stream.
+/// Build a `verb` request for `iri` with args from a JSON object
+/// (`{"name":"value", …}`) — the network terminal's command parser passes args this way.
+fn request_from(verb: Verb, iri: &str, args_json: &str) -> std::result::Result<Request, String> {
+    let parsed = Iri::parse(iri).map_err(|e| format!("bad iri `{iri}`: {e}"))?;
+    let mut request = Request::new(verb, parsed);
+    let args: serde_json::Map<String, serde_json::Value> =
+        serde_json::from_str(args_json).map_err(|e| format!("bad args: {e}"))?;
+    for (name, value) in args {
+        let bytes = match value {
+            serde_json::Value::String(s) => s.into_bytes(),
+            other => other.to_string().into_bytes(),
+        };
+        request = request.with_arg(name, ArgRef::Inline(bytes));
+    }
+    Ok(request)
+}
+
+/// Encode a `compose src=<src>` request (the page pull) — convenience over [`encode_issue`].
 #[wasm_bindgen(js_name = encodeComposeCall)]
 pub fn encode_compose_call(src: String) -> Vec<u8> {
     let request = Request::new(
@@ -221,8 +237,34 @@ pub fn encode_compose_call(src: String) -> Vec<u8> {
     ikigai_wire::encode(&ikigai_wire::Call::Issue(request)).expect("encode call")
 }
 
-/// Decode the server's ikigai-wire `Reply` bytes into `{ kind, text, cache }`
-/// (the same JSON shape `evalLine` returns), for the page to render.
+/// Encode a SOURCE request as `Call::Issue` — the terminal's `source <iri> [k=v…]`.
+/// `args_json` is `{"name":"value", …}`. Empty bytes on a parse error.
+#[wasm_bindgen(js_name = encodeIssue)]
+pub fn encode_issue(iri: String, args_json: String) -> Vec<u8> {
+    match request_from(Verb::Source, &iri, &args_json) {
+        Ok(request) => ikigai_wire::encode(&ikigai_wire::Call::Issue(request)).unwrap_or_default(),
+        Err(_) => Vec::new(),
+    }
+}
+
+/// Encode an is-cached probe — `Call::IsCached` (`cache <iri>` in the terminal).
+#[wasm_bindgen(js_name = encodeIsCached)]
+pub fn encode_is_cached(iri: String, args_json: String) -> Vec<u8> {
+    match request_from(Verb::Source, &iri, &args_json) {
+        Ok(request) => {
+            ikigai_wire::encode(&ikigai_wire::Call::IsCached(request)).unwrap_or_default()
+        }
+        Err(_) => Vec::new(),
+    }
+}
+
+/// Encode a `list` of the kernel's bindings — `Call::Entries`.
+#[wasm_bindgen(js_name = encodeEntries)]
+pub fn encode_entries() -> Vec<u8> {
+    ikigai_wire::encode(&ikigai_wire::Call::Entries).expect("encode call")
+}
+
+/// Decode the server's ikigai-wire `Reply` into `{ kind, text, cache }`.
 #[wasm_bindgen(js_name = decodeReply)]
 pub fn decode_reply(bytes: Vec<u8>) -> String {
     use ikigai_resolve::CacheStatus;
@@ -242,12 +284,31 @@ pub fn decode_reply(bytes: Vec<u8>) -> String {
                 ),
             }
         }
-        Ok(ikigai_wire::Reply::Error(e)) => ("error", e, String::new()),
-        Ok(other) => (
-            "error",
-            format!("unexpected reply: {other:?}"),
+        Ok(ikigai_wire::Reply::Cached(hit)) => (
+            "output",
+            if hit { "cached" } else { "not cached" }.to_string(),
             String::new(),
         ),
+        Ok(ikigai_wire::Reply::Entries(Some(entries))) => {
+            let text = entries
+                .iter()
+                .map(|e| format!("{}  → {}", e.pattern, e.endpoint))
+                .collect::<Vec<_>>()
+                .join("\n");
+            (
+                "output",
+                if text.is_empty() {
+                    "(no bindings)".to_string()
+                } else {
+                    text
+                },
+                String::new(),
+            )
+        }
+        Ok(ikigai_wire::Reply::Entries(None)) => {
+            ("output", "(listing unsupported)".to_string(), String::new())
+        }
+        Ok(ikigai_wire::Reply::Error(e)) => ("error", e, String::new()),
         Err(e) => ("error", format!("decode failed: {e}"), String::new()),
     };
     serde_json::json!({ "kind": kind, "text": text, "cache": cache }).to_string()
