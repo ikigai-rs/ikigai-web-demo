@@ -151,11 +151,46 @@ impl MetaRenderer for JsonOrTurtle {
     }
 }
 
-/// Build the in-page kernel: the demo endpoints, `compose`, and the page shapes,
-/// behind the JSON-or-Turtle meta renderer. One kernel drives both the composed
-/// page and the terminal, so they share a space and a cache. Public so the
-/// WebTransport server (`src/bin/server.rs`) resolves against the same space.
-pub fn build_kernel() -> Kernel {
+/// `urn:host:info` — reports the host's `nature` (set by whoever builds the
+/// kernel: `Embedded (Browser)` in the page, `Remote (WebTransport)` on the
+/// server) and runtime, so `source urn:host:info` shows what differs between the
+/// in-browser and over-the-wire situations. Uncacheable — a live host fact.
+fn host_info(nature: &'static str) -> FnEndpoint {
+    FnEndpoint::new("host-info", move |_inv: &Invocation<'_>| {
+        let runtime = if cfg!(target_family = "wasm") {
+            "browser · wasm32".to_string()
+        } else {
+            format!(
+                "native · {}/{}",
+                std::env::consts::OS,
+                std::env::consts::ARCH
+            )
+        };
+        let body = format!(
+            "ikigai host\n  nature    {nature}\n  runtime   {runtime}\n  \
+             space     demo (toUpper · reverseList · split · greeter · compose)\n"
+        );
+        Ok(Representation::new(
+            ReprType::new("text/plain").with_param("charset", "utf-8"),
+            body.into_bytes(),
+        ))
+    })
+    .with_description(
+        Description::new("host-info")
+            .title("Host info")
+            .summary("Reports the kernel host's nature (embedded/remote + transport) and runtime.")
+            .verb(Verb::Source)
+            .verb(Verb::Meta)
+            .output("text/plain;charset=utf-8"),
+    )
+}
+
+/// Build the in-page kernel with the host `nature` reported by `urn:host:info`:
+/// the demo endpoints, `compose`, and the page shapes, behind the JSON-or-Turtle
+/// meta renderer. One kernel drives both the composed page and the terminal, so
+/// they share a space and a cache. Public so the WebTransport server
+/// (`src/bin/server.rs`) resolves against the same space — with its own nature.
+pub fn build_kernel(nature: &'static str) -> Kernel {
     let space = EndpointSpace::new()
         .bind(Exact::new("urn:fn:toUpper"), builtins::to_upper())
         .bind(Exact::new("urn:fn:reverseList"), builtins::reverse_list())
@@ -167,12 +202,14 @@ pub fn build_kernel() -> Kernel {
             shape("web-cli", WEB_CLI_HTML),
         )
         .bind(Exact::new("urn:data:page"), shape("page", PAGE_HTML))
-        .bind(Exact::new("urn:data:about"), shape("about", ABOUT_HTML));
+        .bind(Exact::new("urn:data:about"), shape("about", ABOUT_HTML))
+        .bind(Exact::new("urn:host:info"), host_info(nature));
     Kernel::with_meta_renderer(Arc::new(space), Arc::new(JsonOrTurtle))
 }
 
 thread_local! {
-    static ENGINE: ikigai_engine::Engine = ikigai_engine::Engine::new(build_kernel());
+    static ENGINE: ikigai_engine::Engine =
+        ikigai_engine::Engine::new(build_kernel("Embedded (Browser)"));
 }
 
 /// Set a readable panic hook so Rust panics show up in the browser console.

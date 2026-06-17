@@ -44,7 +44,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cert sha-256: {hash_hex}");
     println!("open the network demo page with  #cert={hash_hex}  in the URL");
 
-    let kernel = Arc::new(ikigai_web_demo::build_kernel());
+    let kernel = Arc::new(ikigai_web_demo::build_kernel("Remote (WebTransport)"));
 
     let config = ServerConfig::builder()
         .with_bind_default(port)
