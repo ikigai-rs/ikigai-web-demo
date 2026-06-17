@@ -54,7 +54,9 @@ jobs:
 
       - name: Build WASM + JS bindings into dist/
         run: |
-          cargo build --release --target wasm32-unknown-unknown
+          # --lib only: the native WebTransport server bin (src/bin/server.rs)
+          # isn't part of the wasm build.
+          cargo build --release --lib --target wasm32-unknown-unknown
           wasm-bindgen --target web --out-dir dist \
             target/wasm32-unknown-unknown/release/ikigai_web_demo.wasm
 

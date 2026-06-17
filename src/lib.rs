@@ -15,8 +15,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use ikigai_core::{
-    builtins, ArgSpec, Description, Endpoint, EndpointSpace, Error, Exact, FnEndpoint, Invocation,
-    Kernel, MetaRenderer, ReprType, Representation, Result, Verb,
+    builtins, ArgRef, ArgSpec, Description, Endpoint, EndpointSpace, Error, Exact, FnEndpoint,
+    Invocation, Iri, Kernel, MetaRenderer, ReprType, Representation, Request, Result, Verb,
 };
 use ikigai_vocab::TurtleRenderer;
 use wasm_bindgen::prelude::*;
@@ -153,15 +153,19 @@ impl MetaRenderer for JsonOrTurtle {
 
 /// Build the in-page kernel: the demo endpoints, `compose`, and the page shapes,
 /// behind the JSON-or-Turtle meta renderer. One kernel drives both the composed
-/// page and the terminal, so they share a space and a cache.
-fn build_kernel() -> Kernel {
+/// page and the terminal, so they share a space and a cache. Public so the
+/// WebTransport server (`src/bin/server.rs`) resolves against the same space.
+pub fn build_kernel() -> Kernel {
     let space = EndpointSpace::new()
         .bind(Exact::new("urn:fn:toUpper"), builtins::to_upper())
         .bind(Exact::new("urn:fn:reverseList"), builtins::reverse_list())
         .bind(Exact::new("urn:fn:compose"), builtins::compose())
         .bind(Exact::new("urn:demo:split"), split())
         .bind(Exact::new("urn:demo:greeter"), Greeter)
-        .bind(Exact::new("urn:demo:web-cli"), shape("web-cli", WEB_CLI_HTML))
+        .bind(
+            Exact::new("urn:demo:web-cli"),
+            shape("web-cli", WEB_CLI_HTML),
+        )
         .bind(Exact::new("urn:data:page"), shape("page", PAGE_HTML))
         .bind(Exact::new("urn:data:about"), shape("about", ABOUT_HTML));
     Kernel::with_meta_renderer(Arc::new(space), Arc::new(JsonOrTurtle))
@@ -195,5 +199,56 @@ pub fn eval(line: String) -> String {
         Action::Quit => ("quit", String::new(), String::new()),
         Action::Noop => ("noop", String::new(), String::new()),
     });
+    serde_json::json!({ "kind": kind, "text": text, "cache": cache }).to_string()
+}
+
+// --- Network demo: the WASM wire codec ------------------------------------
+//
+// The network demo does NOT host the kernel — it talks to a remote one over
+// WebTransport. JS does the network I/O; these two functions do the only part
+// that must match the server byte-for-byte: the ikigai-wire `Call`/`Reply`
+// codec (the same protocol ikigai-ipc and ikigai-quic speak). No kernel here.
+
+/// Encode a `compose src=<src>` request as ikigai-wire `Call` bytes, to send to
+/// the server over a WebTransport stream.
+#[wasm_bindgen(js_name = encodeComposeCall)]
+pub fn encode_compose_call(src: String) -> Vec<u8> {
+    let request = Request::new(
+        Verb::Source,
+        Iri::parse("urn:fn:compose").expect("valid iri"),
+    )
+    .with_arg("src", ArgRef::Inline(src.into_bytes()));
+    ikigai_wire::encode(&ikigai_wire::Call::Issue(request)).expect("encode call")
+}
+
+/// Decode the server's ikigai-wire `Reply` bytes into `{ kind, text, cache }`
+/// (the same JSON shape `evalLine` returns), for the page to render.
+#[wasm_bindgen(js_name = decodeReply)]
+pub fn decode_reply(bytes: Vec<u8>) -> String {
+    use ikigai_resolve::CacheStatus;
+    let (kind, text, cache) = match ikigai_wire::decode::<ikigai_wire::Reply>(&bytes) {
+        Ok(ikigai_wire::Reply::Resolved(repr, status)) => {
+            let cache = match status {
+                CacheStatus::Hit => "cached",
+                CacheStatus::Miss => "computed",
+                CacheStatus::Uncacheable => "uncacheable",
+            };
+            match String::from_utf8(repr.bytes) {
+                Ok(text) => ("output", text, cache.to_string()),
+                Err(_) => (
+                    "error",
+                    "reply was not UTF-8 text".to_string(),
+                    String::new(),
+                ),
+            }
+        }
+        Ok(ikigai_wire::Reply::Error(e)) => ("error", e, String::new()),
+        Ok(other) => (
+            "error",
+            format!("unexpected reply: {other:?}"),
+            String::new(),
+        ),
+        Err(e) => ("error", format!("decode failed: {e}"), String::new()),
+    };
     serde_json::json!({ "kind": kind, "text": text, "cache": cache }).to_string()
 }
