@@ -14,12 +14,10 @@ crate-type = ["cdylib", "rlib"]
 # proof, intentionally not part of either repo's CI.
 ikigai-core = "0.1.5"  # builtins::compose
 ikigai-vocab = "0.1"
-# Prototype (increment 2): reuse the CLI's renderer-agnostic Engine in the browser.
-# Path-deps to the sibling ikigai-cli checkout while we prove it out; the publish-vs-path
-# decision comes after it runs.
+# Increment 2: reuse the CLI's renderer-agnostic Engine (which pulls ikigai-resolve
+# transitively for `impl Resolver for Kernel`). Path-dep to the sibling ikigai-cli
+# checkout while we prove it out; the publish-vs-path decision comes after it runs.
 ikigai-engine = { path = "../ikigai-cli/crates/ikigai-engine" }
-transport-core = { path = "../ikigai-cli/crates/transport-core" }
-transport-embedded = { path = "../ikigai-cli/crates/transport-embedded" }
 serde_json = "1"  # encode the eval result ({kind, text, cache}) for JS
 async-trait = "0.1"
 wasm-bindgen = "=0.2.108"
