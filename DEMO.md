@@ -22,6 +22,7 @@ Two repos: this one (`ikigai-web-demo`) for the browser demos, and a sibling
     looking at**, tagged `cached` (it shares the page's cache).
   - `source urn:demo:split "a,b,c" .. urn:fn:toUpper` → `A` `B` `C` (the `..` map operator)
   - `source urn:demo:split "x,y,z" | ( urn:fn:toUpper ; urn:fn:reverseList )` → fork/join
+  - `source urn:host:info` → **Embedded (Browser)** · `browser · wasm32` (the host names itself)
   - `list`, `help`
 
 ## 1. The terminal CLI — from the `ikigai-cli` checkout
@@ -37,9 +38,23 @@ cargo run --bin ikigai          # full-screen TUI REPL
 - **compose:** `source urn:fn:compose src=urn:data:page`
 - **Cache visibility:** every result tags `computed` / `cached` / `uncacheable`;
   `cache <iri>` probes without resolving.
+- **Host info:** `source urn:host:info` → **Embedded (Native)** + runtime — the host
+  names itself (and it's `uncacheable`, a live fact).
 - **Editable input line:** Emacs / vi / native keybindings, kill-ring, system
   clipboard, OSC-52 over SSH. Switch with `config keybindings=vi`.
 - `list`, `describe urn:fn:toUpper`, `help`, `quit`.
+
+**Batch caching (one-shot `-c`).** Several `-c` commands run in order over one
+kernel, so overlap is served from cache — and a summary prints at the end:
+
+```bash
+ikigai -c 'source urn:fn:toUpper hi' \
+       -c 'source urn:fn:toUpper hi' \
+       -c 'source urn:host:info'
+# stdout:  HI / HI / (host info)
+# stderr:  [computed] / [cached] / [uncacheable]
+#          — batch: 3 commands · 1 cached · 1 computed · 1 uncacheable
+```
 
 ## 2. Across processes & the network — same REPL, pluggable transports
 
@@ -56,6 +71,20 @@ cargo run --features quic --bin ikigai -- --connect quic://127.0.0.1:4433   # B
 
 Point out: two clients on one server **see each other's `cached` results** — the
 cache lives on the server.
+
+`source urn:host:info` while connected reports the transport — **Remote (IPC)** or
+**Remote (QUIC)** — so the *same* command names how you reached the kernel. And batch
+caching shines remotely: a one-shot `-c` batch against a warm server is served from
+cache, not recomputed:
+
+```bash
+ikigai serve &                                   # server with a warm cache
+ikigai -c 'source urn:fn:toUpper hi'             # … warm it
+ikigai --connect -c 'source urn:fn:toUpper hi' \
+       -c 'source urn:fn:toUpper hi' \
+       -c 'source urn:host:info'
+#  → — batch: 3 commands · 2 cached · 0 computed · 1 uncacheable   (Remote (IPC))
+```
 
 ## 3. The network web demo — pull over WebTransport (this repo)
 
@@ -82,6 +111,7 @@ Call on a fresh WebTransport stream, resolved by the remote kernel:
 - `source urn:fn:toUpper hello` twice → `computed` then `cached` (the server's cache)
 - `cache urn:fn:toUpper hello` — is it cached, server-side? (no resolve)
 - `compose urn:data:page` — recompose the page over the wire
+- `source urn:host:info` → **Remote (WebTransport)** · `native · …` (the *server's* runtime)
 
 So it's literally **demo 0's terminal, but every command goes over the network.**
 
@@ -97,3 +127,6 @@ So it's literally **demo 0's terminal, but every command goes over the network.*
   network, and across a page reload.
 - **One wire protocol** (`ikigai-wire`) is reused byte-for-byte by IPC, QUIC, and
   WebTransport — the resolution seam is universal.
+- **`source urn:host:info` names the situation** — the *same* command reports
+  `Embedded (Native)` / `Embedded (Browser)` / `Remote (IPC)` / `Remote (QUIC)` /
+  `Remote (WebTransport)` and the runtime, so each demo says what it is.
