@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A page pulled over the network by ikigai</title>
+<style>
+  html { background: #fff; }
+  body { font: 17px/1.7 -apple-system, system-ui, sans-serif; max-width: 860px; margin: 44px auto; padding: 0 22px; color: #1a1a1a; background: #fff; }
+  h1 { color: #1f7199; font-size: 28px; margin-bottom: 2px; }
+  .sub { color: #555; margin-top: 0; }
+  article { border: 1px solid #dfe2e5; border-radius: 10px; padding: 4px 18px 16px; margin: 18px 0; }
+  code { color: #7a3e9d; font: 14px ui-monospace, Menlo, monospace; }
+  b { background: #eef7ee; border-radius: 4px; padding: 0 4px; font-weight: 600; }
+  h3 { font-size: 17px; color: #444; margin-top: 4px; }
+  aside.about { border-left: 3px solid #1f7199; background: #f6f9fb; border-radius: 6px; padding: 2px 16px 12px; margin: 16px 0; }
+  .literal { color: #555; }
+  .literal b { background: none; padding: 0; }
+  .panel { border: 1px solid #dfe2e5; border-radius: 10px; padding: 14px 18px; margin: 16px 0; background: #fbfcfd; }
+  .panel input { font: 13px ui-monospace, Menlo, monospace; width: 100%; box-sizing: border-box; padding: 7px; border: 1px solid #c3c8ce; border-radius: 6px; margin: 6px 0; }
+  .panel button { font-size: 15px; padding: 8px 16px; cursor: pointer; border: 1px solid #1f7199; border-radius: 6px; background: #1f7199; color: #fff; }
+  .panel button:disabled { opacity: .5; cursor: default; }
+  .status { font: 13px ui-monospace, Menlo, monospace; margin-top: 8px; }
+  .status.ok { color: #1a7f37; }
+  .status.err { color: #b3261e; }
+  .status.work { color: #8a6d00; }
+  .net-badge { display: inline-block; font: 12px ui-monospace, Menlo, monospace; background: #eaf3f7; color: #1f7199; border-radius: 4px; padding: 1px 7px; margin-left: 6px; }
+</style>
+</head>
+<body>
+
+<div class="panel">
+  <strong>ikigai over WebTransport</strong> — this page does <em>not</em> host the kernel. It opens a
+  WebTransport (HTTP/3 / QUIC) connection to a kernel server, sends one <code>compose
+  urn:data:page</code> request as <code>ikigai-wire</code> bytes (the same protocol
+  <code>ikigai-ipc</code>/<code>ikigai-quic</code> speak), and the server composes the page
+  <em>remotely</em> and streams the HTML back. Only the wire codec runs in WASM here — the
+  kernel is on the other end.
+  <p style="margin:10px 0 2px;color:#555">Run <code>cargo run --bin ikigai-net-server</code>, paste the
+  printed cert hash, and connect (or open this page with <code>#cert=&lt;hash&gt;</code>):</p>
+  <input id="cert" placeholder="server cert sha-256 (hex)" autocomplete="off" spellcheck="false">
+  <input id="url" value="https://127.0.0.1:4433" autocomplete="off" spellcheck="false">
+  <button id="go">Pull urn:data:page over the network</button>
+  <div id="status" class="status"></div>
+</div>
+
+<main id="app"></main>
+
+<script type="module">
+import init, { encodeComposeCall, decodeReply } from './ikigai_web_demo.js';
+await init();
+
+const $ = (id) => document.getElementById(id);
+const status = (msg, cls) => { const s = $('status'); s.textContent = msg; s.className = 'status ' + (cls || ''); };
+
+// Prefill the cert hash from the URL fragment (#cert=…), if present.
+const frag = new URLSearchParams(location.hash.slice(1));
+if (frag.get('cert')) $('cert').value = frag.get('cert').trim();
+
+const hexToBytes = (hex) => {
+  hex = hex.trim().replace(/[^0-9a-fA-F]/g, '');
+  const out = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.substr(i * 2, 2), 16);
+  return out;
+};
+
+async function readAll(readable) {
+  const reader = readable.getReader();
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value); total += value.length;
+  }
+  const out = new Uint8Array(total);
+  let off = 0;
+  for (const c of chunks) { out.set(c, off); off += c.length; }
+  return out;
+}
+
+async function pull() {
+  if (typeof WebTransport === 'undefined') {
+    status('This browser has no WebTransport (try Chrome/Edge).', 'err'); return;
+  }
+  const url = $('url').value.trim();
+  const certHex = $('cert').value.trim();
+  if (certHex.length !== 64) { status('Paste the 64-char sha-256 cert hash the server printed.', 'err'); return; }
+
+  $('go').disabled = true;
+  try {
+    status('opening WebTransport to ' + url + ' …', 'work');
+    const wt = new WebTransport(url, {
+      serverCertificateHashes: [{ algorithm: 'sha-256', value: hexToBytes(certHex) }],
+    });
+    await wt.ready;
+
+    status('connected — sending compose(urn:data:page) over a bidi stream …', 'work');
+    const stream = await wt.createBidirectionalStream();
+    const writer = stream.writable.getWriter();
+    await writer.write(encodeComposeCall('urn:data:page'));
+    await writer.close();                       // signal end-of-request
+
+    const replyBytes = await readAll(stream.readable);
+    const r = JSON.parse(decodeReply(replyBytes));
+    wt.close();
+
+    if (r.kind === 'output') {
+      $('app').innerHTML = r.text;
+      status('pulled ' + replyBytes.length + ' bytes over the network — composed remotely, served ' + (r.cache || '?') + ' ✓', 'ok');
+      // Tag the heading so it's obvious this came over the wire.
+      const h1 = $('app').querySelector('h1');
+      if (h1) h1.insertAdjacentHTML('beforeend', '<span class="net-badge">over WebTransport</span>');
+    } else {
+      status('server replied with an error: ' + r.text, 'err');
+    }
+  } catch (e) {
+    status('failed: ' + e + '  (is the server running, and the cert hash current? it rotates each run)', 'err');
+  } finally {
+    $('go').disabled = false;
+  }
+}
+
+$('go').addEventListener('click', pull);
+// Auto-pull if the cert came in via the URL fragment.
+if (frag.get('cert')) pull();
+</script>
+</body>
+</html>
