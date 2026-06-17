@@ -15,8 +15,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use ikigai_core::{
-    builtins, Description, Endpoint, EndpointSpace, Error, Exact, FnEndpoint, Invocation, Kernel,
-    MetaRenderer, ReprType, Representation, Result, Verb,
+    builtins, ArgSpec, Description, Endpoint, EndpointSpace, Error, Exact, FnEndpoint, Invocation,
+    Kernel, MetaRenderer, ReprType, Representation, Result, Verb,
 };
 use ikigai_vocab::TurtleRenderer;
 use wasm_bindgen::prelude::*;
@@ -108,6 +108,33 @@ fn shape(name: &'static str, html: &'static str) -> FnEndpoint {
     })
 }
 
+/// `urn:demo:split` — splits the `in` argument on commas into a newline list:
+/// a *list producer* for the `..` map operator (`split "a,b,c" .. urn:fn:toUpper`).
+fn split() -> FnEndpoint {
+    FnEndpoint::new("split", |inv: &Invocation<'_>| {
+        let items = inv
+            .inline_str("in")?
+            .split(',')
+            .map(str::trim)
+            .collect::<Vec<_>>()
+            .join("\n");
+        Ok(Representation::new(
+            ReprType::new("text/plain").with_param("charset", "utf-8"),
+            items.into_bytes(),
+        )
+        .cacheable())
+    })
+    .with_description(
+        Description::new("split")
+            .title("Split")
+            .summary("Splits the `in` argument on commas into newline-separated items.")
+            .verb(Verb::Source)
+            .verb(Verb::Meta)
+            .input(ArgSpec::new("in").summary("comma-separated items"))
+            .output("text/plain;charset=utf-8"),
+    )
+}
+
 /// Turtle / plain-text self-descriptions, plus an `application/json` projection —
 /// which the Engine reads to learn each endpoint's argument contract for `source`
 /// routing (the same renderer the desktop CLI uses).
@@ -132,6 +159,7 @@ fn build_kernel() -> Kernel {
         .bind(Exact::new("urn:fn:toUpper"), builtins::to_upper())
         .bind(Exact::new("urn:fn:reverseList"), builtins::reverse_list())
         .bind(Exact::new("urn:fn:compose"), builtins::compose())
+        .bind(Exact::new("urn:demo:split"), split())
         .bind(Exact::new("urn:demo:greeter"), Greeter)
         .bind(Exact::new("urn:demo:web-cli"), shape("web-cli", WEB_CLI_HTML))
         .bind(Exact::new("urn:data:page"), shape("page", PAGE_HTML))
