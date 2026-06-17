@@ -23,8 +23,9 @@ src=urn:data:page` into it returns the very page you're reading — reported `ca
 since the page already composed it. The whole grammar works in the browser: pipelines
 `|`, map `..`, fork `( a ; b )`, named `key=value` args, plus `compose`, `cache`, and `list`.
 
-It depends on the published [`ikigai-core`](https://crates.io/crates/ikigai-core)
-and [`ikigai-vocab`](https://crates.io/crates/ikigai-vocab) crates, so a fresh
+It depends on the published [`ikigai-core`](https://crates.io/crates/ikigai-core),
+[`ikigai-vocab`](https://crates.io/crates/ikigai-vocab), and
+[`ikigai-engine`](https://crates.io/crates/ikigai-engine) crates, so a fresh
 checkout builds on its own.
 
 ## Prerequisites
