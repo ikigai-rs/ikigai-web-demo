@@ -78,13 +78,16 @@ caching shines remotely: a one-shot `-c` batch against a warm server is served f
 cache, not recomputed:
 
 ```bash
-ikigai serve &                                   # server with a warm cache
-ikigai -c 'source urn:fn:toUpper hi'             # … warm it
+ikigai serve &                                       # server — cache starts empty
+ikigai --connect -c 'source urn:fn:toUpper hi'       # warm the SERVER's cache (--connect!)
 ikigai --connect -c 'source urn:fn:toUpper hi' \
        -c 'source urn:fn:toUpper hi' \
        -c 'source urn:host:info'
-#  → — batch: 3 commands · 2 cached · 0 computed · 1 uncacheable   (Remote (IPC))
+#  → — batch: 3 commands · 2 cached · 1 uncacheable   (Remote (IPC))
 ```
+
+(Note the warming step **also** needs `--connect` — without it, `ikigai -c …` runs a
+throwaway *embedded* kernel and warms its own cache, not the server's.)
 
 ## 3. The network web demo — pull over WebTransport (this repo)
 
