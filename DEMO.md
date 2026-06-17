@@ -70,11 +70,20 @@ cargo run --bin ikigai-net-server          # → https://127.0.0.1:4433 + cert s
 cd dist && python3 -m http.server 8087
 ```
 
-Open `http://127.0.0.1:8087/net.html`, paste the printed cert hash, click
-**Pull**. The browser sends one `compose` request as `ikigai-wire` bytes; the
-**server** composes the page and streams the HTML back — first pull `computed`,
-second `cached` (the server's cache persists). Same page as demo 0, but the
-kernel is *remote*. (Chrome/Edge; the cert hash rotates each server run.)
+Open `http://127.0.0.1:8087/net.html`, paste the printed cert hash, **Connect**.
+The browser sends a `compose` request as `ikigai-wire` bytes; the **server**
+composes the page and streams the HTML back — first pull `computed`, second
+`cached` (the server's cache persists). Same page as demo 0, but the kernel is
+*remote*. (Chrome/Edge; the cert hash rotates each server run.)
+
+**The terminal in that page is live too** — each command is its own `ikigai-wire`
+Call on a fresh WebTransport stream, resolved by the remote kernel:
+- `list` — the resources bound *on the server*
+- `source urn:fn:toUpper hello` twice → `computed` then `cached` (the server's cache)
+- `cache urn:fn:toUpper hello` — is it cached, server-side? (no resolve)
+- `compose urn:data:page` — recompose the page over the wire
+
+So it's literally **demo 0's terminal, but every command goes over the network.**
 
 ---
 
