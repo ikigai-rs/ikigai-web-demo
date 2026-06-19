@@ -18,10 +18,15 @@ path = "src/bin/server.rs"
 # Published crates from crates.io (graduated off the sibling path deps once
 # ikigai-core/ikigai-vocab were published at 0.1.0). This demo is a standalone
 # proof, intentionally not part of either repo's CI.
-ikigai-core = "0.1.5"  # builtins::compose
+ikigai-core = "0.1.7"  # builtins::compose; 0.1.7 = the Capability ACL ikigai-fs needs
 # The reusable function library, linked in as a published module crate.
 # Compiled to wasm32 alongside this lib — the in-browser proof of module linkage.
 ikigai-fn = "0.1.0"
+# The capability-gated file module, here on its wasm32 localStorage backend — the
+# browser proof that the same module serves files natively and in the page.
+# Path dep until ikigai-fs 0.1.1 (the localStorage backend) is published, then
+# switch to `ikigai-fs = "0.1.1"`.
+ikigai-fs = { path = "../ikigai-fs" }
 ikigai-vocab = "0.1"
 # The CLI's renderer-agnostic Engine — drives the in-page terminal. Pulls
 # ikigai-resolve transitively for `impl Resolver for Kernel`. Published, so a

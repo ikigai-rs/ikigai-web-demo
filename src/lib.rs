@@ -16,7 +16,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use ikigai_core::{
     ArgRef, Description, Endpoint, Error, Exact, FnEndpoint, Invocation, Iri, Kernel, MetaRenderer,
-    ReprType, Representation, Request, Result, Verb,
+    ReprType, Representation, Request, Result, UriTemplate, Verb,
 };
 use ikigai_vocab::TurtleRenderer;
 use wasm_bindgen::prelude::*;
@@ -141,7 +141,7 @@ fn host_info(nature: &'static str) -> FnEndpoint {
         };
         let body = format!(
             "ikigai host\n  nature    {nature}\n  runtime   {runtime}\n  \
-             space     ikigai-fn (toUpper · reverseList · wrap · split · greet · echo · compose) + greeter\n"
+             space     ikigai-fn (toUpper · reverseList · wrap · split · greet · echo · compose) + greeter + files (urn:file:* → localStorage)\n"
         );
         Ok(Representation::new(
             ReprType::new("text/plain").with_param("charset", "utf-8"),
@@ -175,7 +175,16 @@ pub fn build_kernel(nature: &'static str) -> Kernel {
         )
         .bind(Exact::new("urn:data:page"), shape("page", PAGE_HTML))
         .bind(Exact::new("urn:data:about"), shape("about", ABOUT_HTML))
-        .bind(Exact::new("urn:host:info"), host_info(nature));
+        .bind(Exact::new("urn:host:info"), host_info(nature))
+        // The capability-gated file module on its browser backend: `urn:file:{path}`
+        // resolves to `localStorage` (keyed `ikigai:fs:ws/<path>`), jailed to the
+        // virtual `ws` root. Same module, same `file:` contract as the native CLI —
+        // only the backend differs. Files persist across reloads and are shared with
+        // page JavaScript through the same store.
+        .bind(
+            UriTemplate::parse(ikigai_fs::FILE_TEMPLATE).expect("valid file template"),
+            ikigai_fs::FileEndpoint::new("ws"),
+        );
     Kernel::with_meta_renderer(Arc::new(space), Arc::new(JsonOrTurtle))
 }
 
