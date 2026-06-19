@@ -23,24 +23,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # --- Pre-publish only -------------------------------------------------
-      # While the demo still path-deps the sibling ikigai-cli checkout
-      # (Cargo.toml `ikigai-engine = { path = "../ikigai-cli/..." }`), it can't
-      # build from a lone checkout. To deploy before the crates are published,
-      # check out BOTH repos as siblings and build from a subdir — replace the
-      # `actions/checkout` above with:
-      #
-      #   - uses: actions/checkout@v4
-      #     with: { path: ikigai-web-demo }
-      #   - uses: actions/checkout@v4
-      #     with: { repository: ikigai-rs/ikigai-cli, ref: main, path: ikigai-cli }
-      #
-      # and add `working-directory: ikigai-web-demo` to the build step so
-      # `../ikigai-cli` resolves. Once ikigai-engine is on crates.io and
-      # Cargo.toml uses a crates.io version, delete all of this — the single
-      # checkout above builds standalone.
-      # ----------------------------------------------------------------------
-
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
