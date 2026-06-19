@@ -15,8 +15,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use ikigai_core::{
-    builtins, ArgRef, ArgSpec, Description, Endpoint, EndpointSpace, Error, Exact, FnEndpoint,
-    Invocation, Iri, Kernel, MetaRenderer, ReprType, Representation, Request, Result, Verb,
+    ArgRef, Description, Endpoint, Error, Exact, FnEndpoint, Invocation, Iri, Kernel, MetaRenderer,
+    ReprType, Representation, Request, Result, Verb,
 };
 use ikigai_vocab::TurtleRenderer;
 use wasm_bindgen::prelude::*;
@@ -108,33 +108,6 @@ fn shape(name: &'static str, html: &'static str) -> FnEndpoint {
     })
 }
 
-/// `urn:demo:split` — splits the `in` argument on commas into a newline list:
-/// a *list producer* for the `..` map operator (`split "a,b,c" .. urn:fn:toUpper`).
-fn split() -> FnEndpoint {
-    FnEndpoint::new("split", |inv: &Invocation<'_>| {
-        let items = inv
-            .inline_str("in")?
-            .split(',')
-            .map(str::trim)
-            .collect::<Vec<_>>()
-            .join("\n");
-        Ok(Representation::new(
-            ReprType::new("text/plain").with_param("charset", "utf-8"),
-            items.into_bytes(),
-        )
-        .cacheable())
-    })
-    .with_description(
-        Description::new("split")
-            .title("Split")
-            .summary("Splits the `in` argument on commas into newline-separated items.")
-            .verb(Verb::Source)
-            .verb(Verb::Meta)
-            .input(ArgSpec::new("in").summary("comma-separated items"))
-            .output("text/plain;charset=utf-8"),
-    )
-}
-
 /// Turtle / plain-text self-descriptions, plus an `application/json` projection —
 /// which the Engine reads to learn each endpoint's argument contract for `source`
 /// routing (the same renderer the desktop CLI uses).
@@ -168,7 +141,7 @@ fn host_info(nature: &'static str) -> FnEndpoint {
         };
         let body = format!(
             "ikigai host\n  nature    {nature}\n  runtime   {runtime}\n  \
-             space     demo (toUpper · reverseList · split · greeter · compose)\n"
+             space     ikigai-fn (toUpper · reverseList · wrap · split · greet · echo · compose) + greeter\n"
         );
         Ok(Representation::new(
             ReprType::new("text/plain").with_param("charset", "utf-8"),
@@ -191,11 +164,10 @@ fn host_info(nature: &'static str) -> FnEndpoint {
 /// they share a space and a cache. Public so the WebTransport server
 /// (`src/bin/server.rs`) resolves against the same space — with its own nature.
 pub fn build_kernel(nature: &'static str) -> Kernel {
-    let space = EndpointSpace::new()
-        .bind(Exact::new("urn:fn:toUpper"), builtins::to_upper())
-        .bind(Exact::new("urn:fn:reverseList"), builtins::reverse_list())
-        .bind(Exact::new("urn:fn:compose"), builtins::compose())
-        .bind(Exact::new("urn:demo:split"), split())
+    // The reusable functions come from the linked `ikigai-fn` module crate
+    // (compiled to wasm32 alongside this lib); this host chains its own page
+    // shapes, the in-page terminal mount, the greeter, and `urn:host:info`.
+    let space = ikigai_fn::space()
         .bind(Exact::new("urn:demo:greeter"), Greeter)
         .bind(
             Exact::new("urn:demo:web-cli"),

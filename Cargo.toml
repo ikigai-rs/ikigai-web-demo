@@ -19,6 +19,9 @@ path = "src/bin/server.rs"
 # ikigai-core/ikigai-vocab were published at 0.1.0). This demo is a standalone
 # proof, intentionally not part of either repo's CI.
 ikigai-core = "0.1.5"  # builtins::compose
+# The reusable function library, linked in as a published module crate.
+# Compiled to wasm32 alongside this lib — the in-browser proof of module linkage.
+ikigai-fn = "0.1.0"
 ikigai-vocab = "0.1"
 # The CLI's renderer-agnostic Engine — drives the in-page terminal. Pulls
 # ikigai-resolve transitively for `impl Resolver for Kernel`. Published, so a
