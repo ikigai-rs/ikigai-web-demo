@@ -42,6 +42,12 @@ storage differs:
   propagates through composition: `sink urn:file:page.txt 'latest: $a{urn:file:note.txt}'`,
   then writing `note.txt` recomputes the composed page that transcluded it. Exactly
   the CLI's behaviour, in a browser tab.
+- **Cross-tab freshness — the browser's "file watcher":** open the page in **two
+  tabs**, `source urn:file:note.txt` in both (now `cached` in each), then `sink` a
+  new value in tab A. Tab B's cached read invalidates and recomputes on its next
+  `source` — a `storage` event cuts the thread (through `urn:kernel:cut`), the browser
+  analogue of the CLI's filesystem watcher. The cache tracks changes from outside this
+  tab, not just its own writes.
 
 **The kernel as resources — `urn:kernel:*`.** The kernel exposes its *own* operations
 as capability-gated resources, resolved intrinsically (before any space):
