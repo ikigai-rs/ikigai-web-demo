@@ -183,7 +183,10 @@ pub fn build_kernel(nature: &'static str) -> Kernel {
         // page JavaScript through the same store.
         .bind(
             UriTemplate::parse(ikigai_fs::FILE_TEMPLATE).expect("valid file template"),
-            ikigai_fs::FileEndpoint::new("ws"),
+            // Cacheable: a localStorage read caches under a golden thread, and a
+            // `sink` (kernel auto-cut) invalidates it — so the browser shows the
+            // golden thread, the same as the native CLI.
+            ikigai_fs::FileEndpoint::new("ws").cacheable(),
         );
     Kernel::with_meta_renderer(Arc::new(space), Arc::new(JsonOrTurtle))
 }
