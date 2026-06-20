@@ -200,6 +200,38 @@ thread_local! {
 #[wasm_bindgen(start)]
 pub fn start() {
     console_error_panic_hook::set_once();
+    #[cfg(target_family = "wasm")]
+    install_storage_watcher();
+}
+
+/// Watch `localStorage` for **out-of-band** workspace-file changes — another tab of
+/// this origin, or page JavaScript — and cut the corresponding golden thread, so a
+/// cached read (and any composite over it) recomputes. The browser's analogue of the
+/// CLI's filesystem watcher.
+///
+/// The cross-tab `storage` event fires in *other* documents of the origin (same-tab
+/// writes already go through the kernel's auto-cut). The cut itself goes through
+/// `urn:kernel:cut` — the cut-as-resource — by evaluating one engine command, so no
+/// direct kernel handle is needed.
+#[cfg(target_family = "wasm")]
+fn install_storage_watcher() {
+    use wasm_bindgen::JsCast;
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let on_storage = wasm_bindgen::closure::Closure::<dyn Fn(web_sys::StorageEvent)>::new(
+        |event: web_sys::StorageEvent| {
+            // Keys are `ikigai:fs:ws/<path>`; the thread is `urn:file:<path>`.
+            if let Some(rel) = event.key().as_deref().and_then(|k| k.strip_prefix("ikigai:fs:ws/")) {
+                let cut = format!("sink urn:kernel:cut urn:file:{rel}");
+                ENGINE.with(|engine| {
+                    let _ = engine.eval(&cut);
+                });
+            }
+        },
+    );
+    let _ = window.add_event_listener_with_callback("storage", on_storage.as_ref().unchecked_ref());
+    on_storage.forget(); // keep the listener alive for the page's lifetime
 }
 
 /// Evaluate one REPL line through the CLI Engine — the full grammar (pipelines `|`,
