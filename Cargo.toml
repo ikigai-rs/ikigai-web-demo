@@ -24,7 +24,7 @@ ikigai-core = "0.1.10"  # golden thread + the urn:kernel:* namespace (cut/thread
 ikigai-fn = "0.1.0"
 # The capability-gated file module, here on its wasm32 localStorage backend — the
 # browser proof that the same module serves files natively and in the page.
-ikigai-fs = "0.1.1"
+ikigai-fs = "0.1.2"  # cacheable file Source (FileEndpoint::cacheable) for the golden thread
 ikigai-vocab = "0.1"
 # The CLI's renderer-agnostic Engine — drives the in-page terminal. Pulls
 # ikigai-resolve transitively for `impl Resolver for Kernel`. Published, so a
@@ -33,7 +33,7 @@ ikigai-vocab = "0.1"
 ikigai-engine = "0.1.1"
 # The on-wire Call/Reply protocol — the WASM codec (network demo) speaks it in the
 # browser, and the server speaks it on the other end. Same bytes as ikigai-ipc/quic.
-ikigai-resolve = "0.1"
+ikigai-resolve = "0.1.2"  # cache-status from is_cached probe — correct labels under golden-thread eviction
 ikigai-wire = "0.1"
 serde_json = "1"  # encode the eval result ({kind, text, cache}) for JS
 async-trait = "0.1"

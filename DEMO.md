@@ -36,6 +36,12 @@ storage differs:
   `localStorage` under `ikigai:fs:ws/note.txt`, so the page's own JavaScript shares
   it: in the devtools console `localStorage.getItem('ikigai:fs:ws/note.txt')` returns
   what `sink` wrote — and a JS `setItem` is read straight back by `source`.
+- **The golden thread, in the tab too:** `source urn:file:note.txt` twice →
+  `computed` then `cached` (reads cache); `sink urn:file:note.txt v2` ;
+  `source urn:file:note.txt` → `v2 computed` — the write invalidated it. And it
+  propagates through composition: `sink urn:file:page.txt 'latest: $a{urn:file:note.txt}'`,
+  then writing `note.txt` recomputes the composed page that transcluded it. Exactly
+  the CLI's behaviour, in a browser tab.
 
 **The kernel as resources — `urn:kernel:*`.** The kernel exposes its *own* operations
 as capability-gated resources, resolved intrinsically (before any space):
