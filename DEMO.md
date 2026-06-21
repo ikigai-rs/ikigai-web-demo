@@ -143,6 +143,37 @@ ikigai -c 'source urn:fn:toUpper hi' \
 #          — batch: 3 commands · 1 cached · 1 computed · 1 uncacheable
 ```
 
+**The web is a resource — `urn:httpGet`…`urn:httpDelete` (the `ikigai-http` module).**
+The CLI mounts the outbound HTTP-client module on a native `ureq` transport, so a URL
+is a resource the kernel resolves: one endpoint per method, the ROC verb mirroring HTTP
+idempotency (`source urn:httpGet` ↔ GET, `sink urn:httpPost|Put|Patch`, `delete
+urn:httpDelete`), the URL passed as `url=`.
+
+- **Cached by the origin's headers.** A GET threads on its URL and honours
+  `Cache-Control: max-age` as a deadline (the kernel's clock enforces it). Two GETs to
+  a `max-age` origin in one process — the cache is per-kernel, so use one invocation
+  (or a `serve`/`--connect` server to share it):
+  ```bash
+  ikigai -c 'source urn:httpGet url=https://httpbin.org/cache/120' \
+         -c 'source urn:httpGet url=https://httpbin.org/cache/120'
+  #  [computed] then [cached]  — batch: 2 commands · 1 cached · 1 computed
+  ```
+  No `Cache-Control` (e.g. `https://example.com`) → `[uncacheable]`, a live read.
+- **The golden thread, over HTTP.** A mutating call to a URL cuts its thread, so a
+  cached GET recomputes — `… GET (cached) … sink urn:httpPost url=<same> body … GET` →
+  the GET recomputes. (Or cut it directly: `sink urn:kernel:cut <url>`.)
+- **Network capabilities — hand an agent the web, narrowly.** `urn:cap:net:<host>`
+  gates every call; `cap net-<host>` is shorthand:
+  ```bash
+  ikigai -c 'cap net-example.com' \
+         -c 'source urn:httpGet url=https://example.com' \
+         -c 'source urn:httpGet url=https://httpbin.org/cache/120'
+  #  narrowed → example.com returns its HTML → httpbin REFUSED:
+  #  "capability does not grant `GET` to `httpbin.org/cache/120`"
+  ```
+  And `cap agent` (files + free/busy, **no** net scope) means an agent handed it can't
+  reach the web at all — `source urn:httpGet …` is refused outright.
+
 ## 2. Across processes & the network — same REPL, pluggable transports
 
 ```bash
