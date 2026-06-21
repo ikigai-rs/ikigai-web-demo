@@ -23,7 +23,13 @@ to an `<ikigai-cli>` element that wires itself up on insertion. Because it share
 page's kernel and content-addressed cache, typing `source urn:fn:compose
 src=urn:data:page` into it returns the very page you're reading — reported `cached`,
 since the page already composed it. The whole grammar works in the browser: pipelines
-`|`, map `..`, fork `( a ; b )`, named `key=value` args, plus `compose`, `cache`, and `list`.
+`|`, map `..`, fork `( a ; b )`, named `key=value` args, plus `compose`, `cache`, `cap`, and `list`.
+
+A row of **ZeroTrust** buttons above the terminal walks the capability story, enforced
+client-side in WASM: `cap read-only` narrows the session to a *read* scope, after which a
+`sink urn:file:…` write is refused (`capability does not grant `write``) while reads still
+resolve — and the file module's **jail** refuses to escape its root (`../../…`) even at
+full authority. The *same* `cap` command and enforcement as the native CLI.
 
 It depends on the published [`ikigai-core`](https://crates.io/crates/ikigai-core),
 [`ikigai-vocab`](https://crates.io/crates/ikigai-vocab), and
