@@ -89,7 +89,8 @@ cargo run --bin ikigai          # full-screen TUI REPL
 
 - **Resolve:** `source urn:fn:toUpper hello` → `HELLO`
 - **Pipelines / map / fork:** `source urn:fn:toUpper hi | urn:demo:wrap`,
-  `source urn:demo:split "a,b,c" .. urn:fn:toUpper`, `( a ; b )`
+  `source urn:demo:split "a,b,c" .. urn:fn:toUpper`, `( a ; b )` — and `..`/`( ; )`
+  run their branches **in parallel** on a worker pool (see *the async scheduler* below)
 - **Named args (contract-driven):** `source urn:demo:greet greeting=Hi name=World`
 - **compose:** `source urn:fn:compose src=urn:data:page`
 - **Cache visibility:** every result tags `computed` / `cached` / `uncacheable`;
@@ -98,7 +99,7 @@ cargo run --bin ikigai          # full-screen TUI REPL
   names itself (and it's `uncacheable`, a live fact).
 - **Editable input line:** Emacs / vi / native keybindings, kill-ring, system
   clipboard, OSC-52 over SSH. Switch with `config keybindings=vi`.
-- `list`, `describe urn:fn:toUpper`, `help`, `quit`.
+- `list`, `describe urn:fn:toUpper`, `clear` (wipe the screen, keep history), `help`, `quit`.
 
 **Files — capability-gated, jailed, cacheable.** The CLI mounts `ikigai-fs` at
 `urn:file:{path}`, jailed to `~/.ikigai/workspace` (override with `$IKIGAI_FILES`):
@@ -126,10 +127,76 @@ under a golden thread named after the resource; a write cuts it:
 thread by resolving a resource; `source urn:kernel:threads` / `urn:kernel:cache`
 introspect live kernel state — the reflection surface, capability-gated.
 
-**trace shows the path *and* the authority.** `trace urn:data:page` draws the
-recursive resolution tree (client · transport · each node's endpoint / cache / bytes).
-Under a narrowed session it marks each node: `cap freebusy` then
-`trace urn:personal:contacts` → `cap ✗ denied`; an authorized node shows `cap ✓`.
+**The async scheduler — run the kernel multi-threaded.** *(CLI only — the in-browser
+demo always runs single-threaded: one WASM executor, no pool.)* The kernel itself is
+runtime-free; the scheduler is a pluggable host seam *above* it. By default it's
+`single` (one thread, `block_on`). Set `IKIGAI_SCHEDULER` to put a real worker pool
+underneath, so re-entrant fan-out and fork/map branches run **concurrently** — *parking,
+not blocking*, so even a one-worker pool never deadlocks on a re-entrant `compose`:
+
+```bash
+IKIGAI_SCHEDULER=pool:4 cargo run --release --bin ikigai   # 4 workers
+IKIGAI_SCHEDULER=pool   cargo run --release --bin ikigai   # one per CPU core
+#               (unset, or =single → today's single-threaded default)
+```
+
+- **The scheduler is a resource too:** `source urn:host:scheduler` → its live state
+  (`backend pool:4 · threads 4 · spawned · completed`), uniform with `urn:host:info`
+  and `urn:kernel:cache`.
+- **map (`..`) runs items in parallel** — one spawned task per item. In one process so
+  the counts persist:
+  ```bash
+  IKIGAI_SCHEDULER=pool:4 ikigai \
+    -c 'source urn:demo:split "a,b,c" .. urn:fn:toUpper' \
+    -c 'source urn:host:scheduler'
+  #  → A B C   then   scheduler … spawned 3 · completed 3
+  ```
+- **fork (`( A ; B )`) runs branches in parallel** — one spawned task per branch:
+  ```bash
+  IKIGAI_SCHEDULER=pool:4 ikigai \
+    -c 'source urn:demo:split "x,y,z" | ( urn:fn:toUpper ; urn:fn:reverseList )' \
+    -c 'source urn:host:scheduler'
+  #  → X Y Z / z y x   then   scheduler … spawned 2 · completed 2
+  ```
+- **pipeline (`|`) is sequential** — each stage consumes the previous, so there's
+  nothing to parallelize: `source urn:fn:toUpper hi | urn:demo:wrap` → `[HI]`. The
+  scheduler parallelizes *independent* work, not a data-dependent chain.
+
+Same commands with no flag → identical results, everything on one thread. Toggle the
+env var to show the before/after.
+
+**`trace` shows the *real* execution — with worker attachments.** `trace` resolves a
+resource **for real, once**, then renders the actual execution the kernel recorded:
+the client and capability, the transport, and a tree where each node reports its
+endpoint, cache outcome, **the worker thread it ran on**, and its duration.
+
+- **A single resource is one node** — sourcing it really *is* one resolution:
+  ```
+  trace urn:data:about
+  urn:data:about   about · computed · main · 0ms   → 80b  a shape within a shape: …
+  ```
+- **The page composing itself — the fan-out tree.** Trace the *compose* (not the bare
+  shape) to see the branches it fans out; under `pool:4` they land on **different
+  workers**:
+  ```
+  IKIGAI_SCHEDULER=pool:4 ikigai -c 'trace urn:fn:compose src=urn:data:page'
+
+  urn:fn:compose   compose · computed · main · 0ms   → 273b  ikigai compose demo…
+  ├─ urn:data:page   page · computed · main · 0ms
+  ├─ urn:fn:toUpper  toUpper · computed · ikigai-sched-0 · 0ms
+  ├─ urn:demo:wrap   wrap · computed · ikigai-sched-1 · 0ms
+  ├─ urn:demo:greet  greet · computed · ikigai-sched-0 · 0ms
+  ├─ urn:data:about  about · computed · ikigai-sched-2 · 0ms
+  └─ urn:fn:toUpper  toUpper · computed · ikigai-sched-3 · 0ms
+  ```
+  Single-threaded (no flag) the same tree runs all on `main`. It's **honest about what
+  ran:** `trace urn:data:page` (the bare shape) is one node — the fan-out only appears
+  for what actually fans out.
+- **`trace` follows a single resource** — no `|`, `..`, or `( )`. Those run via
+  `source` (above); the scheduler parallelizes them and `urn:host:scheduler` reports
+  the spawn counts.
+- **Authority, per node.** Under a narrowed session each node is marked: `cap freebusy`
+  then `trace urn:personal:contacts` → `cap ✗ denied`; an authorized node shows `cap ✓`.
 
 **Batch caching (one-shot `-c`).** Several `-c` commands run in order over one
 kernel, so overlap is served from cache — and a summary prints at the end:
@@ -242,6 +309,11 @@ So it's literally **demo 0's terminal, but every command goes over the network.*
 
 - **Same kernel, four runtimes** — terminal → Unix socket → QUIC → browser tab →
   WebTransport, identical behavior.
+- **The same kernel, now threaded** *(CLI)* — `IKIGAI_SCHEDULER=pool:N` drops a real
+  worker pool under the *runtime-free* kernel: `compose`, `..` map, and `( ; )` fork
+  fan their work across workers, `trace` shows which worker ran each node, and
+  *park-don't-block* means even a one-worker pool never deadlocks on re-entrant
+  composition. Flip the env var and the same commands run single-threaded.
 - **The page composes itself**, in-browser *or* over the wire, recursively, from
   addressable resources.
 - **Caching is structural** — `cached` shows up across processes, across the
