@@ -32,6 +32,14 @@
   .cli-prompt { color: #6cb6ff; }
   .cli-input { flex: 1; background: transparent; border: 0; outline: none; color: #d7dde3; font: inherit; padding: 0; }
   ikigai-cli code { color: #c39be8; }
+  /* ZeroTrust walkthrough — preset buttons ABOVE the terminal (a demo control,
+     not part of the CLI), so styled for the light page, not the dark terminal. */
+  .cli-presets { display: flex; flex-wrap: wrap; gap: 7px; margin: 14px 0 8px; align-items: center; }
+  .cli-presets-label { color: #555; font-size: 13px; }
+  .cli-preset { background: #f3f6f9; color: #1f7199; border: 1px solid #ccd6dd; border-radius: 6px; padding: 4px 10px; font: 12.5px ui-monospace, Menlo, monospace; cursor: pointer; }
+  .cli-preset:hover { background: #e7eef3; border-color: #1f7199; }
+  .cli-preset.deny { color: #b03030; border-color: #e3c5c5; }
+  .cli-preset.deny:hover { background: #f7ecec; border-color: #b03030; }
 </style>
 </head>
 <body>
@@ -46,6 +54,18 @@ class IkigaiCli extends HTMLElement {
   connectedCallback() {
     if (this._wired) return;
     this._wired = true;
+    // Preset commands that drive this terminal — a ZeroTrust walkthrough, meant to
+    // be clicked top-to-bottom. Each runs the *real* command through the Engine.
+    const presets = [
+      { cmd: 'sink urn:file:note.txt remember the milk', label: '1 · write a file' },
+      { cmd: 'cap read-only', label: '2 · cap read-only' },
+      { cmd: 'sink urn:file:note.txt nope', label: '3 · write → denied', deny: true },
+      { cmd: 'source urn:file:note.txt', label: '4 · read → ok' },
+      { cmd: 'source urn:file:../../etc/hosts', label: '5 · escape jail → denied', deny: true },
+      { cmd: 'cap reset', label: '6 · cap reset' },
+    ];
+    // The terminal itself stays identical to the desktop CLI — just a transcript
+    // and an input line, nothing demo-specific inside the terminal chrome.
     this.innerHTML =
       '<div class="cli-transcript"></div>' +
       '<div class="cli-inputline"><span class="cli-prompt">ikigai&gt;</span>' +
@@ -57,14 +77,33 @@ class IkigaiCli extends HTMLElement {
     this.print('Type a request, or `help`.  e.g.  source urn:fn:toUpper hello | urn:fn:toUpper', 'hint');
     this.input.addEventListener('keydown', (e) => this.onKey(e));
     this.addEventListener('click', () => this.input.focus());
+
+    // The ZeroTrust preset bar is rendered by this element but placed ABOVE the
+    // terminal as a sibling — it's a demo control, not part of the CLI, so the
+    // terminal reads the same as anywhere else.
+    const bar = document.createElement('div');
+    bar.className = 'cli-presets';
+    bar.innerHTML =
+      '<span class="cli-presets-label">ZeroTrust — click in order:</span>' +
+      presets.map((p, i) =>
+        `<button class="cli-preset${p.deny ? ' deny' : ''}" data-cmd="${i}">${p.label}</button>`
+      ).join('');
+    bar.querySelectorAll('.cli-preset').forEach((btn) =>
+      btn.addEventListener('click', () => this.submit(presets[+btn.dataset.cmd].cmd)));
+    this.insertAdjacentElement('beforebegin', bar);
+  }
+  // Run a line as if typed: echo it, record history, evaluate, refocus.
+  submit(line) {
+    this.print('ikigai> ' + line, 'echo');
+    if (line.trim()) { this.history.push(line); this.hpos = this.history.length; }
+    this.run(line);
+    this.input.focus();
   }
   onKey(e) {
     if (e.key === 'Enter') {
       const line = this.input.value;
       this.input.value = '';
-      this.print('ikigai> ' + line, 'echo');
-      if (line.trim()) { this.history.push(line); this.hpos = this.history.length; }
-      this.run(line);
+      this.submit(line);
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       if (this.hpos > 0) this.input.value = this.history[--this.hpos];

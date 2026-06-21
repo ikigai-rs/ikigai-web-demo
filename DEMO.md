@@ -49,6 +49,28 @@ storage differs:
   analogue of the CLI's filesystem watcher. The cache tracks changes from outside this
   tab, not just its own writes.
 
+**ZeroTrust in the tab — capabilities, enforced in WASM.** The page's *ZeroTrust*
+buttons (just above the terminal) walk the capability story; each runs the *real*
+command through the in-page Engine, top-to-bottom:
+
+- `sink urn:file:note.txt remember the milk` → `wrote 17 bytes` — the session starts at
+  **root**, so the write lands.
+- `cap read-only` → `narrowed — capability: urn:cap:fs:read:ws`. The owner voluntarily
+  gives up authority before handing work on — the session can now only ever *shrink*.
+- `sink urn:file:note.txt nope` → **refused**: `capability does not grant `write` on
+  `note.txt``. The file module's path-ACL holds a *read* scope only.
+- `source urn:file:note.txt` → `remember the milk` — reads still resolve under the
+  narrowed capability.
+- `source urn:file:../../etc/hosts` → **refused**: `parent-directory (`..`) segments are
+  not allowed`. The **jail** is the harder floor *beneath* the capability — it refuses
+  to escape the `ws` root even at full authority.
+- `cap reset` → `reset to identity — capability: root (full authority)`.
+
+Same `cap` command, same enforcement as the native CLI (section 1) — only here it runs
+client-side in WebAssembly. (The named-profile / cross-process *freebusy* story — an
+agent denied your contacts — lives in the **network** demo, section 3, where the kernel
+is a separate server.)
+
 **The kernel as resources — `urn:kernel:*`.** The kernel exposes its *own* operations
 as capability-gated resources, resolved intrinsically (before any space):
 

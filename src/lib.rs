@@ -92,8 +92,11 @@ const WEB_CLI_HTML: &str = r#"<section class="cli-mount">
   <p class="sub">This terminal runs the very same renderer-agnostic Engine as the desktop
      <code>ikigai</code> REPL, on this page's kernel — pipelines <code>|</code>, map
      <code>..</code>, fork <code>( a ; b )</code>, named <code>key=value</code> args, plus
-     <code>compose</code>, <code>cache</code>, and <code>list</code>. Try <code>list</code>,
-     or <code>source urn:fn:compose src=urn:data:page</code> to compose this very page.</p>
+     <code>compose</code>, <code>cache</code>, <code>cap</code>, and <code>list</code>. Try
+     <code>list</code>, or <code>source urn:fn:compose src=urn:data:page</code> to compose this
+     very page. The <b>ZeroTrust</b> buttons below walk the capability story — narrow the
+     session with <code>cap read-only</code> and watch a write get refused, while the jail
+     refuses to escape even at full authority.</p>
   <ikigai-cli></ikigai-cli>
 </section>"#;
 
@@ -192,8 +195,19 @@ pub fn build_kernel(nature: &'static str) -> Kernel {
 }
 
 thread_local! {
-    static ENGINE: ikigai_engine::Engine =
-        ikigai_engine::Engine::new(build_kernel("Embedded (Browser)"));
+    static ENGINE: ikigai_engine::Engine = {
+        let engine = ikigai_engine::Engine::new(build_kernel("Embedded (Browser)"));
+        // Friendly capability profiles, so the in-page terminal reads like the
+        // desktop CLI: `cap read-only` attenuates the session to a *read* scope on
+        // the file module's jail root (`ws`). The session starts at root identity,
+        // so writes work until you narrow; `cap reset` returns to root. With only a
+        // read scope held, `sink urn:file:…` is then refused by the file endpoint's
+        // path-ACL (`urn:cap:fs:write:…` is not granted) — capability attenuation,
+        // enforced in the browser. The jail (`..` segments) is the harder floor
+        // beneath it, refused even at root.
+        engine.define_cap_profile("read-only", ["urn:cap:fs:read:ws"]);
+        engine
+    };
 }
 
 /// Set a readable panic hook so Rust panics show up in the browser console.
