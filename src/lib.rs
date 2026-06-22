@@ -15,10 +15,11 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use ikigai_core::{
-    ArgRef, Description, Endpoint, Error, Exact, FnEndpoint, Invocation, Iri, Kernel, MetaRenderer,
-    ReprType, Representation, Request, Result, UriTemplate, Verb,
+    ArgRef, Clock, Description, Endpoint, Error, Exact, Fallback, FnEndpoint, Invocation, Iri,
+    Kernel, MetaRenderer, ReprType, Representation, Request, Result, Space, Time, UriTemplate, Verb,
 };
 use ikigai_vocab::TurtleRenderer;
+use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 
 /// A demo endpoint with a rich self-description. It greets you from the browser.
@@ -191,12 +192,145 @@ pub fn build_kernel(nature: &'static str) -> Kernel {
             // golden thread, the same as the native CLI.
             ikigai_fs::FileEndpoint::new("ws").cacheable(),
         );
-    Kernel::with_meta_renderer(Arc::new(space), Arc::new(JsonOrTurtle))
+    // The root is a Fallback over the local space, then the HTTP module on a
+    // `fetch`-backed transport — so `urn:httpGet url=…` resolves against the live web
+    // from inside the tab, the same resource model the native CLI drives with ureq.
+    // A `Date`-backed clock lets the kernel honour `Cache-Control: max-age` (and feeds
+    // `urn:kernel:constraint` timing), exactly as `SystemClock` does natively.
+    let root: Arc<dyn Space> = Arc::new(Fallback::new(vec![
+        Arc::new(space) as Arc<dyn Space>,
+        Arc::new(ikigai_http::space(Arc::new(BrowserFetchTransport))) as Arc<dyn Space>,
+    ]));
+    Kernel::with_meta_renderer(root, Arc::new(JsonOrTurtle)).with_clock(Arc::new(BrowserClock))
+}
+
+/// The browser's [`Spawner`](ikigai_core::Spawner): runs each fanned-out task on the
+/// JS event loop via `spawn_local`, so re-entrant compose fan-out and engine fork/map
+/// run **concurrently** in the tab (not sequentially). The task is `!Send` here (the
+/// wasm `BoxFuture` drops the bound), which is exactly why ikigai-core relaxes `Send`
+/// on wasm32. A oneshot bridges completion back so the joiner can park on it.
+#[cfg(target_family = "wasm")]
+struct WasmSpawner;
+
+#[cfg(target_family = "wasm")]
+impl ikigai_core::Spawner for WasmSpawner {
+    fn spawn(&self, task: ikigai_core::BoxFuture<()>) -> ikigai_core::BoxFuture<()> {
+        let (tx, rx) = futures::channel::oneshot::channel();
+        wasm_bindgen_futures::spawn_local(async move {
+            task.await;
+            let _ = tx.send(());
+        });
+        Box::pin(async move {
+            let _ = rx.await;
+        })
+    }
+}
+
+/// A `Date.now()`-backed [`Clock`] for the browser kernel — the wasm analogue of the
+/// native `SystemClock` (`std::time` panics on `wasm32-unknown-unknown`). Lets HTTP
+/// `max-age` deadlines and the constraint readout's timing work in the tab.
+struct BrowserClock;
+impl Clock for BrowserClock {
+    fn now(&self) -> Time {
+        Time::from_millis(js_sys::Date::now() as u64)
+    }
+}
+
+/// The browser's [`HttpTransport`](ikigai_http::HttpTransport): performs requests with
+/// the Fetch API. `fetch` is `!Send` (it touches `JsValue`), but the trait requires a
+/// `Send` future — so `send` confines the fetch to a `spawn_local` task and bridges the
+/// (`Send`) result back through a oneshot channel, keeping `send`'s own future `Send`.
+struct BrowserFetchTransport;
+
+#[async_trait]
+impl ikigai_http::HttpTransport for BrowserFetchTransport {
+    async fn send(
+        &self,
+        request: ikigai_http::HttpRequest,
+    ) -> std::result::Result<ikigai_http::HttpResponse, String> {
+        let (tx, rx) = futures::channel::oneshot::channel();
+        wasm_bindgen_futures::spawn_local(async move {
+            let _ = tx.send(browser_fetch(request).await);
+        });
+        rx.await.map_err(|_| "fetch task was dropped".to_string())?
+    }
+}
+
+/// The actual Fetch-API call — `!Send` (holds `JsValue` across awaits), run on the JS
+/// event loop via `spawn_local`. Captures content-type and cache-control (all
+/// ikigai-http reads) and the body bytes.
+#[cfg(target_family = "wasm")]
+async fn browser_fetch(
+    request: ikigai_http::HttpRequest,
+) -> std::result::Result<ikigai_http::HttpResponse, String> {
+    use wasm_bindgen::JsCast;
+    let jserr = |e: JsValue| format!("{e:?}");
+
+    let opts = web_sys::RequestInit::new();
+    opts.set_method(request.method.as_str());
+    if !request.body.is_empty() {
+        let body = js_sys::Uint8Array::from(request.body.as_slice());
+        opts.set_body(&body);
+    }
+    let req = web_sys::Request::new_with_str_and_init(&request.url, &opts).map_err(jserr)?;
+    for (name, value) in &request.headers {
+        req.headers().set(name, value).map_err(jserr)?;
+    }
+
+    let window = web_sys::window().ok_or("no window")?;
+    let resp: web_sys::Response = wasm_bindgen_futures::JsFuture::from(window.fetch_with_request(&req))
+        .await
+        .map_err(jserr)?
+        .dyn_into()
+        .map_err(|_| "fetch did not return a Response".to_string())?;
+
+    let status = resp.status();
+    let mut headers = Vec::new();
+    if let Ok(Some(ct)) = resp.headers().get("content-type") {
+        headers.push(("content-type".to_string(), ct));
+    }
+    if let Ok(Some(cc)) = resp.headers().get("cache-control") {
+        headers.push(("cache-control".to_string(), cc));
+    }
+
+    let buffer = wasm_bindgen_futures::JsFuture::from(resp.array_buffer().map_err(jserr)?)
+        .await
+        .map_err(jserr)?;
+    let body = js_sys::Uint8Array::new(&buffer).to_vec();
+
+    Ok(ikigai_http::HttpResponse {
+        status,
+        headers,
+        body,
+    })
+}
+
+/// Non-wasm stub so the crate's lib still type-checks for the native server target
+/// (the browser transport is never used there).
+#[cfg(not(target_family = "wasm"))]
+async fn browser_fetch(
+    _request: ikigai_http::HttpRequest,
+) -> std::result::Result<ikigai_http::HttpResponse, String> {
+    Err("browser fetch is wasm-only".to_string())
 }
 
 thread_local! {
-    static ENGINE: ikigai_engine::Engine = {
-        let engine = ikigai_engine::Engine::new(build_kernel("Embedded (Browser)"));
+    // `Rc` so an async eval (`evalLineAsync`) can clone a handle and own it across
+    // `.await` points — a `LocalKey::with` borrow can't span an await. Sync callers
+    // deref through the `Rc` unchanged.
+    static ENGINE: Rc<ikigai_engine::Engine> = {
+        // On wasm, drive concurrency on the JS event loop via a spawn_local Spawner:
+        // into_scheduled feeds the kernel's compose fan-out, with_spawner feeds the
+        // engine's fork/map — so `( a ; b )`, `..`, and compose's markers run
+        // concurrently instead of sequentially. (The native server target builds this
+        // lib unscheduled; it never touches this thread-local.)
+        #[cfg(target_family = "wasm")]
+        let kernel = build_kernel("Embedded (Browser)").into_scheduled(Arc::new(WasmSpawner));
+        #[cfg(not(target_family = "wasm"))]
+        let kernel = Arc::new(build_kernel("Embedded (Browser)"));
+        let engine = ikigai_engine::Engine::new(kernel);
+        #[cfg(target_family = "wasm")]
+        let engine = engine.with_spawner(Arc::new(WasmSpawner));
         // Friendly capability profiles, so the in-page terminal reads like the
         // desktop CLI: `cap read-only` attenuates the session to a *read* scope on
         // the file module's jail root (`ws`). The session starts at root identity,
@@ -206,7 +340,7 @@ thread_local! {
         // enforced in the browser. The jail (`..` segments) is the harder floor
         // beneath it, refused even at root.
         engine.define_cap_profile("read-only", ["urn:cap:fs:read:ws"]);
-        engine
+        Rc::new(engine)
     };
 }
 
@@ -256,16 +390,37 @@ fn install_storage_watcher() {
 /// `source urn:fn:compose src=urn:data:page`; the `<ikigai-cli>` terminal calls it per line.
 #[wasm_bindgen(js_name = evalLine)]
 pub fn eval(line: String) -> String {
+    ENGINE.with(|engine| eval_to_json(engine.eval(&line)))
+}
+
+/// Async sibling of [`eval`], returning a `Promise<string>`. This is the path that
+/// **unblocks the browser**: it drives the Engine's `eval_async` on the JS event
+/// loop (via `future_to_promise`) rather than `block_on`, so a resolution that
+/// awaits a JS `Promise` — `fetch`, WebTransport, a timer — parks and lets the loop
+/// run instead of deadlocking the thread. In-memory commands resolve immediately;
+/// the page's terminal `await`s this for every line.
+#[wasm_bindgen(js_name = evalLineAsync)]
+pub fn eval_line_async(line: String) -> js_sys::Promise {
+    let engine = ENGINE.with(Rc::clone);
+    wasm_bindgen_futures::future_to_promise(async move {
+        Ok(JsValue::from_str(&eval_to_json(engine.eval_async(&line).await)))
+    })
+}
+
+/// Encode an [`Action`](ikigai_engine::Action) as the `{ kind, text, cache }` JSON
+/// the page's terminal consumes — shared by the sync and async entry points.
+fn eval_to_json(action: ikigai_engine::Action) -> String {
     use ikigai_engine::Action;
-    let (kind, text, cache) = ENGINE.with(|engine| match engine.eval(&line) {
+    let (kind, text, cache) = match action {
         Action::Output(entry) => match entry.result {
             Ok(out) => ("output", out, entry.cache.label().unwrap_or_default()),
             Err(err) => ("error", err, String::new()),
         },
         Action::Help => ("help", ikigai_engine::HELP.to_string(), String::new()),
+        Action::Clear => ("clear", String::new(), String::new()),
         Action::Quit => ("quit", String::new(), String::new()),
         Action::Noop => ("noop", String::new(), String::new()),
-    });
+    };
     serde_json::json!({ "kind": kind, "text": text, "cache": cache }).to_string()
 }
 
