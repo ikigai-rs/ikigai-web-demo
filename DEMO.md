@@ -140,22 +140,23 @@ IKIGAI_SCHEDULER=pool   cargo run --release --bin ikigai   # one per CPU core
 #               (unset, or =single → today's single-threaded default)
 ```
 
-- **The scheduler is a resource too:** `source urn:host:scheduler` → its live state
-  (`backend pool:4 · threads 4 · spawned · completed`), uniform with `urn:host:info`
-  and `urn:kernel:cache`.
+- **The scheduler is a kernel resource too:** `source urn:kernel:scheduler` → its live
+  state (`backend pool:4 · threads 4 · spawned · completed`), resolved intrinsically
+  alongside `urn:kernel:cache` / `urn:kernel:threads` — so a *remote* kernel answers it
+  the same way, over the wire.
 - **map (`..`) runs items in parallel** — one spawned task per item. In one process so
   the counts persist:
   ```bash
   IKIGAI_SCHEDULER=pool:4 ikigai \
     -c 'source urn:demo:split "a,b,c" .. urn:fn:toUpper' \
-    -c 'source urn:host:scheduler'
+    -c 'source urn:kernel:scheduler'
   #  → A B C   then   scheduler … spawned 3 · completed 3
   ```
 - **fork (`( A ; B )`) runs branches in parallel** — one spawned task per branch:
   ```bash
   IKIGAI_SCHEDULER=pool:4 ikigai \
     -c 'source urn:demo:split "x,y,z" | ( urn:fn:toUpper ; urn:fn:reverseList )' \
-    -c 'source urn:host:scheduler'
+    -c 'source urn:kernel:scheduler'
   #  → X Y Z / z y x   then   scheduler … spawned 2 · completed 2
   ```
 - **pipeline (`|`) is sequential** — each stage consumes the previous, so there's
@@ -193,7 +194,7 @@ endpoint, cache outcome, **the worker thread it ran on**, and its duration.
   ran:** `trace urn:data:page` (the bare shape) is one node — the fan-out only appears
   for what actually fans out.
 - **`trace` follows a single resource** — no `|`, `..`, or `( )`. Those run via
-  `source` (above); the scheduler parallelizes them and `urn:host:scheduler` reports
+  `source` (above); the scheduler parallelizes them and `urn:kernel:scheduler` reports
   the spawn counts.
 - **Authority, per node.** Under a narrowed session each node is marked: `cap freebusy`
   then `trace urn:personal:contacts` → `cap ✗ denied`; an authorized node shows `cap ✓`.
