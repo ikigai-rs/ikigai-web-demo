@@ -199,6 +199,28 @@ endpoint, cache outcome, **the worker thread it ran on**, and its duration.
 - **Authority, per node.** Under a narrowed session each node is marked: `cap freebusy`
   then `trace urn:personal:contacts` → `cap ✗ denied`; an authorized node shows `cap ✓`.
 
+**`urn:kernel:constraint` — where's the bottleneck?** Where `trace` shows *one*
+resolution, `urn:kernel:constraint` aggregates a rolling window of *all* recent ones
+and names the resource that consumed the most **uncached** compute — the throughput
+constraint (Goldratt's "identify the constraint," answered by the kernel). Cache hits
+cost nothing, so they're excluded: a cheap call made often won't masquerade as the
+bottleneck; an expensive uncached one surfaces.
+
+```
+source urn:fn:compose src=urn:data:page   # do some work…
+source urn:kernel:constraint
+#  constraint  (last 12 resolutions)
+#    urn:fn:compose   ← constraint
+#      1ms uncached · 4 calls · 50% cached
+#    urn:fn:toUpper      0ms uncached · 4 calls · 0% cached
+#    …
+```
+
+A kernel resource like the others — capability-gated, uncacheable, and answerable by a
+*remote* kernel over the wire ("what's your constraint right now?"). Cache the hot call
+(or add a worker / route it to a GPU) and the constraint *moves* — ask again and the
+next one surfaces.
+
 **Batch caching (one-shot `-c`).** Several `-c` commands run in order over one
 kernel, so overlap is served from cache — and a summary prints at the end:
 
