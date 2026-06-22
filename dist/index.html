@@ -40,10 +40,30 @@
   .cli-preset:hover { background: #e7eef3; border-color: #1f7199; }
   .cli-preset.deny { color: #b03030; border-color: #e3c5c5; }
   .cli-preset.deny:hover { background: #f7ecec; border-color: #b03030; }
+
+  /* Interactive runbook — htmx HATEOAS tabs. Every tab/step is a urn:runbook:*
+     resource; the markup below is all rendered by that resource, not authored here. */
+  #runbook { margin-top: 30px; border: 1px solid #dfe2e5; border-radius: 10px; overflow: hidden; }
+  .rb-tabs { display: flex; background: #f3f6f9; border-bottom: 1px solid #dfe2e5; }
+  .rb-tab { background: transparent; border: 0; border-bottom: 2px solid transparent; padding: 9px 16px; font: 14px system-ui, sans-serif; color: #1f7199; cursor: pointer; }
+  .rb-tab:hover { background: #e7eef3; }
+  .rb-tab.selected { background: #fff; border-bottom-color: #1f7199; font-weight: 600; }
+  .rb-panel { padding: 14px 18px 18px; }
+  .rb-intro { color: #444; }
+  .rb-steps { list-style: none; padding: 0; }
+  .rb-steps li { margin: 9px 0; }
+  .rb-step { background: #f3f6f9; color: #1f7199; border: 1px solid #ccd6dd; border-radius: 6px; padding: 4px 10px; font: 12.5px ui-monospace, Menlo, monospace; cursor: pointer; }
+  .rb-step:hover { background: #e7eef3; border-color: #1f7199; }
+  .rb-cmd { color: #7a3e9d; font: 12px ui-monospace, Menlo, monospace; margin-left: 8px; }
+  .rb-note { color: #777; font-size: 12.5px; margin-left: 8px; }
+  .rb-out { background: #0f1419; color: #d7dde3; border-radius: 8px; padding: 10px 12px; margin-top: 12px; min-height: 1.4em; white-space: pre-wrap; font: 13px ui-monospace, Menlo, monospace; }
 </style>
+<script src="https://unpkg.com/htmx.org@2.0.4"></script>
 </head>
 <body>
 <main id="app">…</main>
+
+<section id="runbook" aria-label="ikigai runbook">loading runbook…</section>
 
 <script type="module">
 import init, { evalLineAsync } from './ikigai_web_demo.js';
@@ -143,6 +163,35 @@ try {
 } catch (e) {
   document.getElementById('app').textContent = 'error: ' + e;
 }
+
+// --- Runbook: htmx HATEOAS tabs over the in-page kernel --------------------
+// The ONLY glue in the whole runbook. htmx fires a request for `/k/<command>`;
+// we cancel the network call and resolve the command through the kernel instead,
+// swapping the HTML back. Every tab and step button is pure declarative hx-*
+// authored by the urn:runbook:* resource — switching tabs and running steps are
+// both just "resolve a resource". (When ikigai is served over HTTP, this adapter
+// is replaced by a real server doing the same eval — htmx is unchanged.)
+function runKernel(cmd, target, swapStyle) {
+  return evalLineAsync(cmd).then((res) => {
+    const r = JSON.parse(res);
+    if ((swapStyle || 'innerHTML') === 'beforeend') {
+      target.insertAdjacentText('beforeend', r.text + '\n');
+    } else {
+      target.innerHTML = r.text;
+      htmx.process(target); // wire the hx-* on the freshly swapped-in tabs/steps
+    }
+  });
+}
+document.body.addEventListener('htmx:beforeRequest', (evt) => {
+  const path = evt.detail.requestConfig && evt.detail.requestConfig.path;
+  if (!path || path.indexOf('/k/') === -1) return;
+  evt.preventDefault(); // resolve locally, not over the network
+  const elt = evt.detail.elt;
+  const cmd = decodeURIComponent(path.slice(path.indexOf('/k/') + 3));
+  runKernel(cmd, evt.detail.target, elt.getAttribute('hx-swap'));
+});
+// Bootstrap the first tab now the kernel is ready.
+runKernel('source urn:runbook:basics as=text/html', document.getElementById('runbook'), 'innerHTML');
 </script>
 </body>
 </html>
