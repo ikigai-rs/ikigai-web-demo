@@ -70,10 +70,12 @@ opt-level = "z"
 lto = true
 
 # TEMPORARY (M2): redirect the engine + its Resolver seam to ikigai-cli main, so the
-# in-page terminal drives the *async* engine (eval_async / issue_as_async) before
-# those land on crates.io. A patch unifies every reference — direct and transitive —
-# onto one source, avoiding two-versions-of-a-crate mismatches. Remove (and bump the
-# version pins) once ikigai-engine/ikigai-resolve are published with the async API.
+# in-page terminal drives the *async* engine (eval_async / issue_as_async) before those
+# land on crates.io. Concurrency in the tab comes from a spawn_local-based Spawner over
+# the existing Send futures (no kernel Send relaxation needed — see WasmSpawner), so
+# ikigai-core stays on the published crate. A patch unifies every reference — direct and
+# transitive — onto one source, avoiding two-versions mismatches. Remove (and bump the
+# pins) once ikigai-engine/ikigai-resolve publish with the async API.
 [patch.crates-io]
 ikigai-engine = { git = "https://github.com/ikigai-rs/ikigai-cli" }
 ikigai-resolve = { git = "https://github.com/ikigai-rs/ikigai-cli" }

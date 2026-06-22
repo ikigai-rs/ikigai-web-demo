@@ -204,6 +204,28 @@ pub fn build_kernel(nature: &'static str) -> Kernel {
     Kernel::with_meta_renderer(root, Arc::new(JsonOrTurtle)).with_clock(Arc::new(BrowserClock))
 }
 
+/// The browser's [`Spawner`](ikigai_core::Spawner): runs each fanned-out task on the
+/// JS event loop via `spawn_local`, so re-entrant compose fan-out and engine fork/map
+/// run **concurrently** in the tab (not sequentially). The task is `!Send` here (the
+/// wasm `BoxFuture` drops the bound), which is exactly why ikigai-core relaxes `Send`
+/// on wasm32. A oneshot bridges completion back so the joiner can park on it.
+#[cfg(target_family = "wasm")]
+struct WasmSpawner;
+
+#[cfg(target_family = "wasm")]
+impl ikigai_core::Spawner for WasmSpawner {
+    fn spawn(&self, task: ikigai_core::BoxFuture<()>) -> ikigai_core::BoxFuture<()> {
+        let (tx, rx) = futures::channel::oneshot::channel();
+        wasm_bindgen_futures::spawn_local(async move {
+            task.await;
+            let _ = tx.send(());
+        });
+        Box::pin(async move {
+            let _ = rx.await;
+        })
+    }
+}
+
 /// A `Date.now()`-backed [`Clock`] for the browser kernel — the wasm analogue of the
 /// native `SystemClock` (`std::time` panics on `wasm32-unknown-unknown`). Lets HTTP
 /// `max-age` deadlines and the constraint readout's timing work in the tab.
@@ -297,7 +319,18 @@ thread_local! {
     // `.await` points — a `LocalKey::with` borrow can't span an await. Sync callers
     // deref through the `Rc` unchanged.
     static ENGINE: Rc<ikigai_engine::Engine> = {
-        let engine = ikigai_engine::Engine::new(build_kernel("Embedded (Browser)"));
+        // On wasm, drive concurrency on the JS event loop via a spawn_local Spawner:
+        // into_scheduled feeds the kernel's compose fan-out, with_spawner feeds the
+        // engine's fork/map — so `( a ; b )`, `..`, and compose's markers run
+        // concurrently instead of sequentially. (The native server target builds this
+        // lib unscheduled; it never touches this thread-local.)
+        #[cfg(target_family = "wasm")]
+        let kernel = build_kernel("Embedded (Browser)").into_scheduled(Arc::new(WasmSpawner));
+        #[cfg(not(target_family = "wasm"))]
+        let kernel = Arc::new(build_kernel("Embedded (Browser)"));
+        let engine = ikigai_engine::Engine::new(kernel);
+        #[cfg(target_family = "wasm")]
+        let engine = engine.with_spawner(Arc::new(WasmSpawner));
         // Friendly capability profiles, so the in-page terminal reads like the
         // desktop CLI: `cap read-only` attenuates the session to a *read* scope on
         // the file module's jail root (`ws`). The session starts at root identity,
