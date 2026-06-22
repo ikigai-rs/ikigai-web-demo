@@ -36,6 +36,14 @@ ikigai-resolve = "0.1.2"
 # The on-wire Call/Reply protocol — the WASM codec (network demo) speaks it in the
 # browser, and the server speaks it on the other end. Same bytes as ikigai-ipc/quic.
 ikigai-wire = "0.1"
+# Outbound HTTP-client module (urn:httpGet…). Already async + executor-agnostic
+# (HttpTransport seam), so the browser supplies a `fetch`-backed transport — same
+# module the native CLI drives with ureq. Unchanged for M2, so straight from crates.io.
+ikigai-http = "0.1.1"
+# oneshot channel: the browser fetch transport confines the !Send `fetch` to a
+# spawn_local task and bridges the (Send) result back, so `HttpTransport::send` stays
+# Send as the trait requires.
+futures = "0.3"
 serde_json = "1"  # encode the eval result ({kind, text, cache}) for JS
 async-trait = "0.1"
 wasm-bindgen = "=0.2.108"
@@ -52,7 +60,10 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util"] }
 # wasm-only: the cross-tab `storage` event, used to cut golden threads when another
 # tab (or page JS) changes a workspace file — the browser's filesystem watcher.
 [target.'cfg(target_family = "wasm")'.dependencies]
-web-sys = { version = "0.3", features = ["Window", "EventTarget", "StorageEvent"] }
+web-sys = { version = "0.3", features = [
+    "Window", "EventTarget", "StorageEvent",
+    "Request", "RequestInit", "Response", "Headers",
+] }
 
 [profile.release]
 opt-level = "z"

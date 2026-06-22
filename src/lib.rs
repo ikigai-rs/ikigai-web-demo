@@ -15,8 +15,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use ikigai_core::{
-    ArgRef, Description, Endpoint, Error, Exact, FnEndpoint, Invocation, Iri, Kernel, MetaRenderer,
-    ReprType, Representation, Request, Result, UriTemplate, Verb,
+    ArgRef, Clock, Description, Endpoint, Error, Exact, Fallback, FnEndpoint, Invocation, Iri,
+    Kernel, MetaRenderer, ReprType, Representation, Request, Result, Space, Time, UriTemplate, Verb,
 };
 use ikigai_vocab::TurtleRenderer;
 use std::rc::Rc;
@@ -192,7 +192,104 @@ pub fn build_kernel(nature: &'static str) -> Kernel {
             // golden thread, the same as the native CLI.
             ikigai_fs::FileEndpoint::new("ws").cacheable(),
         );
-    Kernel::with_meta_renderer(Arc::new(space), Arc::new(JsonOrTurtle))
+    // The root is a Fallback over the local space, then the HTTP module on a
+    // `fetch`-backed transport — so `urn:httpGet url=…` resolves against the live web
+    // from inside the tab, the same resource model the native CLI drives with ureq.
+    // A `Date`-backed clock lets the kernel honour `Cache-Control: max-age` (and feeds
+    // `urn:kernel:constraint` timing), exactly as `SystemClock` does natively.
+    let root: Arc<dyn Space> = Arc::new(Fallback::new(vec![
+        Arc::new(space) as Arc<dyn Space>,
+        Arc::new(ikigai_http::space(Arc::new(BrowserFetchTransport))) as Arc<dyn Space>,
+    ]));
+    Kernel::with_meta_renderer(root, Arc::new(JsonOrTurtle)).with_clock(Arc::new(BrowserClock))
+}
+
+/// A `Date.now()`-backed [`Clock`] for the browser kernel — the wasm analogue of the
+/// native `SystemClock` (`std::time` panics on `wasm32-unknown-unknown`). Lets HTTP
+/// `max-age` deadlines and the constraint readout's timing work in the tab.
+struct BrowserClock;
+impl Clock for BrowserClock {
+    fn now(&self) -> Time {
+        Time::from_millis(js_sys::Date::now() as u64)
+    }
+}
+
+/// The browser's [`HttpTransport`](ikigai_http::HttpTransport): performs requests with
+/// the Fetch API. `fetch` is `!Send` (it touches `JsValue`), but the trait requires a
+/// `Send` future — so `send` confines the fetch to a `spawn_local` task and bridges the
+/// (`Send`) result back through a oneshot channel, keeping `send`'s own future `Send`.
+struct BrowserFetchTransport;
+
+#[async_trait]
+impl ikigai_http::HttpTransport for BrowserFetchTransport {
+    async fn send(
+        &self,
+        request: ikigai_http::HttpRequest,
+    ) -> std::result::Result<ikigai_http::HttpResponse, String> {
+        let (tx, rx) = futures::channel::oneshot::channel();
+        wasm_bindgen_futures::spawn_local(async move {
+            let _ = tx.send(browser_fetch(request).await);
+        });
+        rx.await.map_err(|_| "fetch task was dropped".to_string())?
+    }
+}
+
+/// The actual Fetch-API call — `!Send` (holds `JsValue` across awaits), run on the JS
+/// event loop via `spawn_local`. Captures content-type and cache-control (all
+/// ikigai-http reads) and the body bytes.
+#[cfg(target_family = "wasm")]
+async fn browser_fetch(
+    request: ikigai_http::HttpRequest,
+) -> std::result::Result<ikigai_http::HttpResponse, String> {
+    use wasm_bindgen::JsCast;
+    let jserr = |e: JsValue| format!("{e:?}");
+
+    let opts = web_sys::RequestInit::new();
+    opts.set_method(request.method.as_str());
+    if !request.body.is_empty() {
+        let body = js_sys::Uint8Array::from(request.body.as_slice());
+        opts.set_body(&body);
+    }
+    let req = web_sys::Request::new_with_str_and_init(&request.url, &opts).map_err(jserr)?;
+    for (name, value) in &request.headers {
+        req.headers().set(name, value).map_err(jserr)?;
+    }
+
+    let window = web_sys::window().ok_or("no window")?;
+    let resp: web_sys::Response = wasm_bindgen_futures::JsFuture::from(window.fetch_with_request(&req))
+        .await
+        .map_err(jserr)?
+        .dyn_into()
+        .map_err(|_| "fetch did not return a Response".to_string())?;
+
+    let status = resp.status();
+    let mut headers = Vec::new();
+    if let Ok(Some(ct)) = resp.headers().get("content-type") {
+        headers.push(("content-type".to_string(), ct));
+    }
+    if let Ok(Some(cc)) = resp.headers().get("cache-control") {
+        headers.push(("cache-control".to_string(), cc));
+    }
+
+    let buffer = wasm_bindgen_futures::JsFuture::from(resp.array_buffer().map_err(jserr)?)
+        .await
+        .map_err(jserr)?;
+    let body = js_sys::Uint8Array::new(&buffer).to_vec();
+
+    Ok(ikigai_http::HttpResponse {
+        status,
+        headers,
+        body,
+    })
+}
+
+/// Non-wasm stub so the crate's lib still type-checks for the native server target
+/// (the browser transport is never used there).
+#[cfg(not(target_family = "wasm"))]
+async fn browser_fetch(
+    _request: ikigai_http::HttpRequest,
+) -> std::result::Result<ikigai_http::HttpResponse, String> {
+    Err("browser fetch is wasm-only".to_string())
 }
 
 thread_local! {
