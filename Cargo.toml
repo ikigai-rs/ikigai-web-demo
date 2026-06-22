@@ -26,13 +26,11 @@ ikigai-fn = "0.1.0"
 # browser proof that the same module serves files natively and in the page.
 ikigai-fs = "0.1.2"  # cacheable file Source (FileEndpoint::cacheable) for the golden thread
 ikigai-vocab = "0.1"
-# The CLI's renderer-agnostic Engine — drives the in-page terminal. Pulls
-# ikigai-resolve transitively for `impl Resolver for Kernel`. Published version
-# pins, but redirected to `ikigai-cli` main via [patch.crates-io] below FOR THE
-# DURATION OF M2 (browser async eval) — so the async engine flows through without a
-# crates.io publish per iteration. Graduate off the patch once M2 lands.
-ikigai-engine = "0.1.1"
-ikigai-resolve = "0.1.2"
+# The CLI's renderer-agnostic Engine — drives the in-page terminal — and its Resolver
+# seam. 0.1.4 is the async API (eval_async / issue_as_async) that lets the in-page
+# terminal drive the kernel on the JS event loop (M2).
+ikigai-engine = "0.1.4"
+ikigai-resolve = "0.1.4"
 # The on-wire Call/Reply protocol — the WASM codec (network demo) speaks it in the
 # browser, and the server speaks it on the other end. Same bytes as ikigai-ipc/quic.
 ikigai-wire = "0.1"
@@ -68,14 +66,3 @@ web-sys = { version = "0.3", features = [
 [profile.release]
 opt-level = "z"
 lto = true
-
-# TEMPORARY (M2): redirect the engine + its Resolver seam to ikigai-cli main, so the
-# in-page terminal drives the *async* engine (eval_async / issue_as_async) before those
-# land on crates.io. Concurrency in the tab comes from a spawn_local-based Spawner over
-# the existing Send futures (no kernel Send relaxation needed — see WasmSpawner), so
-# ikigai-core stays on the published crate. A patch unifies every reference — direct and
-# transitive — onto one source, avoiding two-versions mismatches. Remove (and bump the
-# pins) once ikigai-engine/ikigai-resolve publish with the async API.
-[patch.crates-io]
-ikigai-engine = { git = "https://github.com/ikigai-rs/ikigai-cli" }
-ikigai-resolve = { git = "https://github.com/ikigai-rs/ikigai-cli" }
