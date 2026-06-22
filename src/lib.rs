@@ -278,9 +278,21 @@ async fn browser_fetch(
     }
 
     let window = web_sys::window().ok_or("no window")?;
+    // A rejected fetch is almost always a browser security block, and the browser
+    // deliberately reports it only as an opaque `TypeError` (it won't say why a
+    // cross-origin request failed). Translate that into the actual cause rather than
+    // surfacing `TypeError: Load failed`.
     let resp: web_sys::Response = wasm_bindgen_futures::JsFuture::from(window.fetch_with_request(&req))
         .await
-        .map_err(jserr)?
+        .map_err(|_| {
+            format!(
+                "the browser blocked this fetch. It can only reach an origin that \
+                 returns CORS headers (Access-Control-Allow-Origin), and an https page \
+                 cannot fetch http. `{}` likely does neither — the native CLI has no \
+                 such limit. (A CORS-enabled https URL works, e.g. https://httpbin.org/uuid.)",
+                request.url
+            )
+        })?
         .dyn_into()
         .map_err(|_| "fetch did not return a Response".to_string())?;
 
