@@ -46,7 +46,7 @@
 <main id="app">…</main>
 
 <script type="module">
-import init, { evalLine } from './ikigai_web_demo.js';
+import init, { evalLineAsync } from './ikigai_web_demo.js';
 
 // The live terminal: a custom element that self-wires when the composed HTML
 // (which contains <ikigai-cli>) is inserted. It drives the same Engine as the page.
@@ -113,11 +113,12 @@ class IkigaiCli extends HTMLElement {
       else { this.hpos = this.history.length; this.input.value = ''; }
     }
   }
-  run(line) {
+  async run(line) {
     let r;
-    try { r = JSON.parse(evalLine(line)); }
+    try { r = JSON.parse(await evalLineAsync(line)); }
     catch (err) { this.print('internal error: ' + err, 'error'); return; }
     if (r.kind === 'noop') return;
+    if (r.kind === 'clear') { this.transcript.replaceChildren(); return; } // wipe output, keep history
     if (r.kind === 'quit') { this.print('(quit — reload the page to restart)', 'hint'); this.input.disabled = true; return; }
     if (r.text) this.print(r.text, r.kind === 'error' ? 'error' : (r.kind === 'help' ? 'help' : 'out'));
     if (r.cache) this.print(r.cache, 'cache');
@@ -137,7 +138,7 @@ await init();
 // The whole page is one resource: compose it through the Engine and inject the
 // result. The composed HTML contains <ikigai-cli>, which self-wires on insertion.
 try {
-  const r = JSON.parse(evalLine('source urn:fn:compose src=urn:data:page'));
+  const r = JSON.parse(await evalLineAsync('source urn:fn:compose src=urn:data:page'));
   document.getElementById('app').innerHTML = r.kind === 'output' ? r.text : ('compose error: ' + r.text);
 } catch (e) {
   document.getElementById('app').textContent = 'error: ' + e;

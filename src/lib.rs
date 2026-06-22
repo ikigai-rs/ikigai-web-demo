@@ -19,6 +19,7 @@ use ikigai_core::{
     ReprType, Representation, Request, Result, UriTemplate, Verb,
 };
 use ikigai_vocab::TurtleRenderer;
+use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 
 /// A demo endpoint with a rich self-description. It greets you from the browser.
@@ -195,7 +196,10 @@ pub fn build_kernel(nature: &'static str) -> Kernel {
 }
 
 thread_local! {
-    static ENGINE: ikigai_engine::Engine = {
+    // `Rc` so an async eval (`evalLineAsync`) can clone a handle and own it across
+    // `.await` points — a `LocalKey::with` borrow can't span an await. Sync callers
+    // deref through the `Rc` unchanged.
+    static ENGINE: Rc<ikigai_engine::Engine> = {
         let engine = ikigai_engine::Engine::new(build_kernel("Embedded (Browser)"));
         // Friendly capability profiles, so the in-page terminal reads like the
         // desktop CLI: `cap read-only` attenuates the session to a *read* scope on
@@ -206,7 +210,7 @@ thread_local! {
         // enforced in the browser. The jail (`..` segments) is the harder floor
         // beneath it, refused even at root.
         engine.define_cap_profile("read-only", ["urn:cap:fs:read:ws"]);
-        engine
+        Rc::new(engine)
     };
 }
 
@@ -256,16 +260,37 @@ fn install_storage_watcher() {
 /// `source urn:fn:compose src=urn:data:page`; the `<ikigai-cli>` terminal calls it per line.
 #[wasm_bindgen(js_name = evalLine)]
 pub fn eval(line: String) -> String {
+    ENGINE.with(|engine| eval_to_json(engine.eval(&line)))
+}
+
+/// Async sibling of [`eval`], returning a `Promise<string>`. This is the path that
+/// **unblocks the browser**: it drives the Engine's `eval_async` on the JS event
+/// loop (via `future_to_promise`) rather than `block_on`, so a resolution that
+/// awaits a JS `Promise` — `fetch`, WebTransport, a timer — parks and lets the loop
+/// run instead of deadlocking the thread. In-memory commands resolve immediately;
+/// the page's terminal `await`s this for every line.
+#[wasm_bindgen(js_name = evalLineAsync)]
+pub fn eval_line_async(line: String) -> js_sys::Promise {
+    let engine = ENGINE.with(Rc::clone);
+    wasm_bindgen_futures::future_to_promise(async move {
+        Ok(JsValue::from_str(&eval_to_json(engine.eval_async(&line).await)))
+    })
+}
+
+/// Encode an [`Action`](ikigai_engine::Action) as the `{ kind, text, cache }` JSON
+/// the page's terminal consumes — shared by the sync and async entry points.
+fn eval_to_json(action: ikigai_engine::Action) -> String {
     use ikigai_engine::Action;
-    let (kind, text, cache) = ENGINE.with(|engine| match engine.eval(&line) {
+    let (kind, text, cache) = match action {
         Action::Output(entry) => match entry.result {
             Ok(out) => ("output", out, entry.cache.label().unwrap_or_default()),
             Err(err) => ("error", err, String::new()),
         },
         Action::Help => ("help", ikigai_engine::HELP.to_string(), String::new()),
+        Action::Clear => ("clear", String::new(), String::new()),
         Action::Quit => ("quit", String::new(), String::new()),
         Action::Noop => ("noop", String::new(), String::new()),
-    });
+    };
     serde_json::json!({ "kind": kind, "text": text, "cache": cache }).to_string()
 }
 
