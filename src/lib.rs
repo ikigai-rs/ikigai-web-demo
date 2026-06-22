@@ -200,6 +200,9 @@ pub fn build_kernel(nature: &'static str) -> Kernel {
     let root: Arc<dyn Space> = Arc::new(Fallback::new(vec![
         Arc::new(space) as Arc<dyn Space>,
         Arc::new(ikigai_http::space(Arc::new(BrowserFetchTransport))) as Arc<dyn Space>,
+        // The interactive runbook (`urn:runbook:*`) — the same module the native CLI
+        // links, rendered here as htmx (HATEOAS) HTML.
+        Arc::new(ikigai_runbook::space()) as Arc<dyn Space>,
     ]));
     Kernel::with_meta_renderer(root, Arc::new(JsonOrTurtle)).with_clock(Arc::new(BrowserClock))
 }

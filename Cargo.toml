@@ -38,6 +38,9 @@ ikigai-wire = "0.1"
 # (HttpTransport seam), so the browser supplies a `fetch`-backed transport — same
 # module the native CLI drives with ureq. Unchanged for M2, so straight from crates.io.
 ikigai-http = "0.1.1"
+# Interactive runbook module (urn:runbook:*) — same module the CLI links; local path
+# during dev, publish/git when stable (like engine/resolve).
+ikigai-runbook = { git = "https://github.com/ikigai-rs/ikigai-runbook" }
 # oneshot channel: the browser fetch transport confines the !Send `fetch` to a
 # spawn_local task and bridges the (Send) result back, so `HttpTransport::send` stays
 # Send as the trait requires.
