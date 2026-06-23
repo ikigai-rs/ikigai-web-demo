@@ -70,7 +70,7 @@
 <section id="runbook" aria-label="ikigai runbook">loading runbook…</section>
 
 <script type="module">
-import init, { evalLineAsync, login, logout } from './ikigai_web_demo.js';
+import init, { evalLineAsync } from './ikigai_web_demo.js';
 
 // The live terminal: a custom element that self-wires when the composed HTML
 // (which contains <ikigai-cli>) is inserted. It drives the same Engine as the page.
@@ -176,12 +176,13 @@ document.body.addEventListener('htmx:beforeRequest', (evt) => {
 runKernel('source urn:runbook:basics as=text/html', document.getElementById('runbook'), 'innerHTML');
 
 // --- Passkey identity bridge ----------------------------------------------
-// The ONE bit of imperative glue for identity (the WebAuthn ceremony, which only a
-// browser API can do — the same "one small bridge" shape as the runbook adapter
-// above). The affordance itself is the urn:host:identity resource composed at the top
-// of the page; clicking its links runs the passkey ceremony, mints a per-client
-// capability via the wasm `login`, then re-resolves urn:host:identity so the page
-// reflects the new identity (HATEOAS — state lives in the representation).
+// The ONE bit of imperative glue for identity: the WebAuthn ceremony, which only a
+// browser API can do (same "one small bridge" shape as the runbook adapter above). The
+// affordance, chip and walkthrough are all rendered by urn:runbook:identity (the
+// Identity tab) from the session capability. Clicking sign-in runs the ceremony, then
+// `sink urn:host:login <scopes>` establishes the session identity as a RESOURCE — the
+// same engine command a remote QUIC server's session layer handles — and we re-resolve
+// the Identity tab so the page reflects it (HATEOAS — state lives in the representation).
 const PK_KEY = 'ikigai:passkey:credId';
 const b64urlToBytes = (s) => {
   s = s.replace(/-/g, '+').replace(/_/g, '/');
@@ -195,9 +196,15 @@ async function clientIdFromRawId(rawId) {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 12);
 }
 
+// Re-render the Identity tab from the (new) session capability.
+const reloadIdentityTab = () =>
+  runKernel('source urn:runbook:identity as=text/html', document.getElementById('runbook'), 'innerHTML');
+
 // Serverless WebAuthn: no relying party to verify the assertion, so this is identity
 // *selection/derivation*, not authenticated login. The credential's id is stable, so a
 // SHA-256 of it gives a stable per-passkey client id that keys the workspace segment.
+// The browser is the passkey "minter": it turns the id into the fs scopes and logs in
+// via the resource. (A QUIC server's minter would derive scopes from the client cert.)
 async function passkeyLogin() {
   const challenge = crypto.getRandomValues(new Uint8Array(32));
   const stored = localStorage.getItem(PK_KEY);
@@ -218,47 +225,10 @@ async function passkeyLogin() {
     rawId = cred.rawId;
     localStorage.setItem(PK_KEY, bytesToB64url(rawId));
   }
-  const ws = login(await clientIdFromRawId(rawId)); // wasm: scope the session to ws/<id>
-  await refreshIdentity(ws);
-}
-
-// Re-resolve the affordance and reflect it in the page; render the "try it" boundary
-// demo when signed in (`ws` is the workspace label, or null when anonymous).
-async function refreshIdentity(ws) {
-  const r = JSON.parse(await evalLineAsync('source urn:host:identity'));
-  const nav = document.querySelector('#app .ik-id');
-  if (nav && r.kind === 'output') nav.outerHTML = r.text;
-  renderTry(ws);
-}
-
-// A minimal walkthrough proving the segment boundary with a single passkey: write and
-// read under ws/<id>, then watch a write *outside* your segment get refused — your
-// capability grants only your own segment. (Buttons run through the live terminal.)
-function renderTry(ws) {
-  const old = document.getElementById('ik-try');
-  if (old) old.remove();
-  if (!ws) return;
-  const id = ws.slice(3); // "ws/<id>" → "<id>"
-  const panel = document.createElement('div');
-  panel.id = 'ik-try';
-  panel.className = 'ik-try';
-  panel.innerHTML = '<span class="ik-try-label">try your segment:</span>';
-  const steps = [
-    ['write a private note', `sink urn:file:${id}/secret.txt mine only`],
-    ['read it back', `source urn:file:${id}/secret.txt`],
-    ['write outside it → denied', `sink urn:file:someone-else/secret.txt nope`],
-  ];
-  for (const [label, cmd] of steps) {
-    const b = document.createElement('button');
-    b.textContent = label;
-    b.title = cmd;
-    b.addEventListener('click', () => {
-      const cli = document.querySelector('ikigai-cli');
-      if (cli) { cli.submit(cmd); cli.scrollIntoView({ block: 'nearest' }); }
-    });
-    panel.appendChild(b);
-  }
-  document.querySelector('#app .ik-id').after(panel);
+  const id = (await clientIdFromRawId(rawId)).replace(/[^a-z0-9]/g, '');
+  const scopes = `urn:cap:fs:read:ws/${id} urn:cap:fs:write:ws/${id} urn:cap:fs:delete:ws/${id}`;
+  await evalLineAsync(`sink urn:host:login ${scopes}`); // login as a resource
+  await reloadIdentityTab();
 }
 
 document.body.addEventListener('click', async (e) => {
@@ -269,8 +239,8 @@ document.body.addEventListener('click', async (e) => {
     try { await passkeyLogin(); }
     catch (err) { alert('passkey sign-in failed or was cancelled:\n' + err); }
   } else {
-    logout();
-    await refreshIdentity(null);
+    await evalLineAsync('sink urn:host:logout');
+    await reloadIdentityTab();
   }
 });
 </script>
