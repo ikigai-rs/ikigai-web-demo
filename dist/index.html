@@ -36,7 +36,7 @@
   /* Interactive runbook — htmx HATEOAS tabs. Every tab/step is a urn:runbook:*
      resource; the markup below is all rendered by that resource, not authored here. */
   #runbook { margin-top: 30px; border: 1px solid #dfe2e5; border-radius: 10px; overflow: hidden; }
-  .rb-tabs { display: flex; background: #f3f6f9; border-bottom: 1px solid #dfe2e5; }
+  .rb-tabs { display: flex; flex-wrap: wrap; background: #f3f6f9; border-bottom: 1px solid #dfe2e5; }
   .rb-tab { background: transparent; border: 0; border-bottom: 2px solid transparent; padding: 9px 16px; font: 14px system-ui, sans-serif; color: #1f7199; cursor: pointer; }
   .rb-tab:hover { background: #e7eef3; }
   .rb-tab.selected { background: #fff; border-bottom-color: #1f7199; font-weight: 600; }
