@@ -15,8 +15,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use ikigai_core::{
-    ArgRef, Clock, Description, Endpoint, Error, Exact, Fallback, FnEndpoint, Invocation, Iri,
-    Kernel, MetaRenderer, ReprType, Representation, Request, Result, Space, Time, UriTemplate, Verb,
+    ArgRef, Capability, Clock, Description, Endpoint, Error, Exact, Fallback, FnEndpoint,
+    Invocation, Iri, Kernel, MetaRenderer, ReprType, Representation, Request, Result, Space, Time,
+    UriTemplate, Verb,
 };
 use ikigai_vocab::TurtleRenderer;
 use std::rc::Rc;
@@ -162,12 +163,127 @@ fn host_info(nature: &'static str) -> FnEndpoint {
     )
 }
 
+/// `urn:host:identity` — the login affordance, rendered **from the session capability**
+/// (the capability *is* the identity). Composed into the top of the page via a
+/// `$a{urn:host:identity}` marker, so the sign-in/out link is part of the page resource
+/// (HATEOAS), not bolted-on chrome. After a passkey login the page re-resolves this one
+/// resource and swaps it in. Uncacheable — it reflects live session state.
+///
+/// Anonymous (root authority) renders a "Sign in with passkey" link; a session holding
+/// `urn:cap:fs:read:ws/<id>` renders the `ws/<id>` identity chip plus "Sign out". The
+/// imperative WebAuthn ceremony behind `#ik-login`/`#ik-logout` lives in the page's one
+/// glue bridge (index.html), the same shape as the htmx `/k/<cmd>` adapter.
+/// The workspace segment id from a session capability's `urn:cap:fs:read:ws/<id>` scope
+/// — the logged-in identity, or `None` when anonymous (root) / unscoped. The capability
+/// *is* the identity, so the affordance and the walkthrough both read it from here.
+fn session_client_id(cap: &Capability) -> Option<String> {
+    cap.scopes().and_then(|scopes| {
+        scopes
+            .iter()
+            .find_map(|s| s.strip_prefix("urn:cap:fs:read:ws/"))
+            .map(str::to_string)
+    })
+}
+
+/// The sign-in / signed-in affordance HTML, from the session identity. `#ik-login` runs
+/// the passkey ceremony (the page's one glue bridge); `#ik-logout` sinks
+/// `urn:host:logout`.
+fn affordance_html(client: Option<&str>) -> String {
+    match client {
+        Some(id) => format!(
+            "<nav class=\"ik-id ik-id-in\">signed in · <code>ws/{id}</code> \
+             <a href=\"#\" id=\"ik-logout\" class=\"ik-id-link\">Sign out</a></nav>"
+        ),
+        None => "<nav class=\"ik-id\">\
+             <a href=\"#\" id=\"ik-login\" class=\"ik-id-link\">🔑 Sign in with a passkey</a> \
+             <span class=\"ik-id-hint\">— scopes a private workspace segment to you</span>\
+             </nav>"
+            .to_string(),
+    }
+}
+
+/// `urn:host:identity` — the session identity as a resource, rendered from the session
+/// capability. Sourced in-page after a login to refresh the affordance, and (once the
+/// QUIC server resolves each connection under its cert-derived capability) over the wire
+/// to report who the remote server thinks you are. Uncacheable — live session state.
+fn host_identity() -> FnEndpoint {
+    FnEndpoint::new("host-identity", move |inv: &Invocation<'_>| {
+        let client = session_client_id(inv.capability);
+        Ok(Representation::new(
+            ReprType::new("text/html").with_param("charset", "utf-8"),
+            affordance_html(client.as_deref()).into_bytes(),
+        ))
+    })
+    .with_description(
+        Description::new("host-identity")
+            .title("Identity")
+            .summary("The session identity, rendered from the session capability.")
+            .verb(Verb::Source)
+            .verb(Verb::Meta)
+            .output("text/html;charset=utf-8"),
+    )
+}
+
+/// `urn:runbook:identity` — the browser-only **Identity** runbook tab. Renders the shared
+/// runbook tab strip (with Identity marked active) followed by a panel: the passkey
+/// affordance plus, when signed in, a walkthrough whose step commands have the live
+/// client id **baked in** (read from the capability) — so the segment-isolation demo is
+/// pure HATEOAS, the only JavaScript being the WebAuthn ceremony behind `#ik-login`.
+fn runbook_identity() -> FnEndpoint {
+    FnEndpoint::new("runbook-identity", move |inv: &Invocation<'_>| {
+        let client = session_client_id(inv.capability);
+        let affordance = affordance_html(client.as_deref());
+        let walkthrough = match client.as_deref() {
+            Some(id) => format!(
+                "<ol class=\"rb-steps\">\
+                 <li><button class=\"rb-step\" hx-get=\"/k/sink urn:file:{id}/secret.txt mine only\" \
+                   hx-target=\"#rb-out\" hx-swap=\"beforeend\">write a private note</button> \
+                   <span class=\"rb-note\">lands — you hold write on <code>ws/{id}</code></span></li>\
+                 <li><button class=\"rb-step\" hx-get=\"/k/source urn:file:{id}/secret.txt\" \
+                   hx-target=\"#rb-out\" hx-swap=\"beforeend\">read it back</button> \
+                   <span class=\"rb-note\">resolves under your capability</span></li>\
+                 <li><button class=\"rb-step\" hx-get=\"/k/sink urn:file:someone-else/secret.txt nope\" \
+                   hx-target=\"#rb-out\" hx-swap=\"beforeend\">write outside your segment</button> \
+                   <span class=\"rb-note\">refused — your capability grants only <code>ws/{id}</code></span></li>\
+                 </ol>"
+            ),
+            None => String::new(),
+        };
+        let body = format!(
+            "{strip}<section class=\"rb-panel\" role=\"tabpanel\">\
+             <p class=\"rb-intro\">A passkey establishes a client <b>identity</b> that scopes a \
+             private workspace segment (<code>ws/&lt;id&gt;</code>) to you: while signed in, files \
+             resolve under — and are confined to — your segment, and another identity's segment is \
+             refused by the resolver. The boundary is the capability/resource model (logical, not \
+             yet cryptographic).</p>\
+             {affordance}{walkthrough}\
+             <pre id=\"rb-out\" class=\"rb-out\" aria-live=\"polite\"></pre></section>",
+            strip = ikigai_runbook::render_tab_strip("identity"),
+        );
+        Ok(Representation::new(
+            ReprType::new("text/html").with_param("charset", "utf-8"),
+            body.into_bytes(),
+        ))
+    })
+    .with_description(
+        Description::new("runbook-identity")
+            .title("Identity")
+            .summary("The passkey identity runbook tab — sign in and watch the segment boundary.")
+            .verb(Verb::Source)
+            .verb(Verb::Meta)
+            .output("text/html;charset=utf-8"),
+    )
+}
+
 /// Build the in-page kernel with the host `nature` reported by `urn:host:info`:
 /// the demo endpoints, `compose`, and the page shapes, behind the JSON-or-Turtle
 /// meta renderer. One kernel drives both the composed page and the terminal, so
 /// they share a space and a cache. Public so the WebTransport server
 /// (`src/bin/server.rs`) resolves against the same space — with its own nature.
 pub fn build_kernel(nature: &'static str) -> Kernel {
+    // Register the browser-only Identity tab so the shared runbook strip lists it
+    // (idempotent). Its panel is `urn:runbook:identity`, bound below.
+    ikigai_runbook::add_tab("identity", "Identity");
     // The reusable functions come from the linked `ikigai-fn` module crate
     // (compiled to wasm32 alongside this lib); this host chains its own page
     // shapes, the in-page terminal mount, the greeter, and `urn:host:info`.
@@ -180,6 +296,8 @@ pub fn build_kernel(nature: &'static str) -> Kernel {
         .bind(Exact::new("urn:data:page"), shape("page", PAGE_HTML))
         .bind(Exact::new("urn:data:about"), shape("about", ABOUT_HTML))
         .bind(Exact::new("urn:host:info"), host_info(nature))
+        .bind(Exact::new("urn:host:identity"), host_identity())
+        .bind(Exact::new("urn:runbook:identity"), runbook_identity())
         // The capability-gated file module on its browser backend: `urn:file:{path}`
         // resolves to `localStorage` (keyed `ikigai:fs:ws/<path>`), jailed to the
         // virtual `ws` root. Same module, same `file:` contract as the native CLI —

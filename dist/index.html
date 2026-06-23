@@ -49,6 +49,18 @@
   .rb-cmd { color: #7a3e9d; font: 12px ui-monospace, Menlo, monospace; margin-left: 8px; }
   .rb-note { color: #777; font-size: 12.5px; margin-left: 8px; }
   .rb-out { background: #0f1419; color: #d7dde3; border-radius: 8px; padding: 10px 12px; margin-top: 12px; min-height: 1.4em; white-space: pre-wrap; font: 13px ui-monospace, Menlo, monospace; }
+
+  /* Passkey identity — the sign-in/out affordance is rendered by urn:host:identity
+     (composed into the top of the page); these styles dress it. */
+  .ik-id { margin: 0 0 18px; padding: 8px 13px; background: #f6f9fb; border: 1px solid #dfe2e5; border-radius: 8px; font-size: 14px; color: #555; }
+  .ik-id-in { background: #eef7ee; border-color: #cfe6cf; }
+  .ik-id-link { color: #1f7199; cursor: pointer; text-decoration: none; font-weight: 600; }
+  .ik-id-link:hover { text-decoration: underline; }
+  .ik-id-hint { color: #888; font-size: 13px; }
+  .ik-try { margin: -8px 0 18px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .ik-try .ik-try-label { color: #777; font-size: 13px; }
+  .ik-try button { background: #f3f6f9; color: #1f7199; border: 1px solid #ccd6dd; border-radius: 6px; padding: 4px 10px; font: 12.5px ui-monospace, Menlo, monospace; cursor: pointer; }
+  .ik-try button:hover { background: #e7eef3; border-color: #1f7199; }
 </style>
 <script src="https://unpkg.com/htmx.org@2.0.4"></script>
 </head>
@@ -162,6 +174,75 @@ document.body.addEventListener('htmx:beforeRequest', (evt) => {
 });
 // Bootstrap the first tab now the kernel is ready.
 runKernel('source urn:runbook:basics as=text/html', document.getElementById('runbook'), 'innerHTML');
+
+// --- Passkey identity bridge ----------------------------------------------
+// The ONE bit of imperative glue for identity: the WebAuthn ceremony, which only a
+// browser API can do (same "one small bridge" shape as the runbook adapter above). The
+// affordance, chip and walkthrough are all rendered by urn:runbook:identity (the
+// Identity tab) from the session capability. Clicking sign-in runs the ceremony, then
+// `sink urn:host:login <scopes>` establishes the session identity as a RESOURCE — the
+// same engine command a remote QUIC server's session layer handles — and we re-resolve
+// the Identity tab so the page reflects it (HATEOAS — state lives in the representation).
+const PK_KEY = 'ikigai:passkey:credId';
+const b64urlToBytes = (s) => {
+  s = s.replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(s + '='.repeat((4 - (s.length % 4)) % 4));
+  return Uint8Array.from(bin, (c) => c.charCodeAt(0));
+};
+const bytesToB64url = (buf) =>
+  btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+async function clientIdFromRawId(rawId) {
+  const digest = await crypto.subtle.digest('SHA-256', rawId);
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 12);
+}
+
+// Re-render the Identity tab from the (new) session capability.
+const reloadIdentityTab = () =>
+  runKernel('source urn:runbook:identity as=text/html', document.getElementById('runbook'), 'innerHTML');
+
+// Serverless WebAuthn: no relying party to verify the assertion, so this is identity
+// *selection/derivation*, not authenticated login. The credential's id is stable, so a
+// SHA-256 of it gives a stable per-passkey client id that keys the workspace segment.
+// The browser is the passkey "minter": it turns the id into the fs scopes and logs in
+// via the resource. (A QUIC server's minter would derive scopes from the client cert.)
+async function passkeyLogin() {
+  const challenge = crypto.getRandomValues(new Uint8Array(32));
+  const stored = localStorage.getItem(PK_KEY);
+  let rawId;
+  if (stored) {
+    const assertion = await navigator.credentials.get({ publicKey: {
+      challenge, rpId: location.hostname, userVerification: 'preferred',
+      allowCredentials: [{ type: 'public-key', id: b64urlToBytes(stored) }],
+    } });
+    rawId = assertion.rawId;
+  } else {
+    const cred = await navigator.credentials.create({ publicKey: {
+      challenge, rp: { name: 'ikigai', id: location.hostname },
+      user: { id: crypto.getRandomValues(new Uint8Array(16)), name: 'ikigai-user', displayName: 'ikigai user' },
+      pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
+      authenticatorSelection: { userVerification: 'preferred' },
+    } });
+    rawId = cred.rawId;
+    localStorage.setItem(PK_KEY, bytesToB64url(rawId));
+  }
+  const id = (await clientIdFromRawId(rawId)).replace(/[^a-z0-9]/g, '');
+  const scopes = `urn:cap:fs:read:ws/${id} urn:cap:fs:write:ws/${id} urn:cap:fs:delete:ws/${id}`;
+  await evalLineAsync(`sink urn:host:login ${scopes}`); // login as a resource
+  await reloadIdentityTab();
+}
+
+document.body.addEventListener('click', async (e) => {
+  const link = e.target.closest('#ik-login, #ik-logout');
+  if (!link) return;
+  e.preventDefault();
+  if (link.id === 'ik-login') {
+    try { await passkeyLogin(); }
+    catch (err) { alert('passkey sign-in failed or was cancelled:\n' + err); }
+  } else {
+    await evalLineAsync('sink urn:host:logout');
+    await reloadIdentityTab();
+  }
+});
 </script>
 </body>
 </html>
