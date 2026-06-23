@@ -157,7 +157,10 @@ function runKernel(cmd, target, swapStyle) {
   return evalLineAsync(cmd).then((res) => {
     const r = JSON.parse(res);
     if ((swapStyle || 'innerHTML') === 'beforeend') {
-      target.insertAdjacentText('beforeend', r.text + '\n');
+      // Append the cache outcome (computed / cached / uncacheable) after the output,
+      // so the runbook step shows it inline — no need to switch to the REPL to see it.
+      const tag = r.cache ? '   [' + r.cache + ']' : '';
+      target.insertAdjacentText('beforeend', r.text + tag + '\n');
     } else {
       target.innerHTML = r.text;
       htmx.process(target); // wire the hx-* on the freshly swapped-in tabs/steps
