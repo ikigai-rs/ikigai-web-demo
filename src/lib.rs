@@ -15,8 +15,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use ikigai_core::{
-    ArgRef, Clock, Description, Endpoint, Error, Exact, Fallback, FnEndpoint, Invocation, Iri,
-    Kernel, MetaRenderer, ReprType, Representation, Request, Result, Space, Time, UriTemplate, Verb,
+    ArgRef, Capability, Clock, Description, Endpoint, Error, Exact, Fallback, FnEndpoint,
+    Invocation, Iri, Kernel, MetaRenderer, ReprType, Representation, Request, Result, Space, Time,
+    UriTemplate, Verb,
 };
 use ikigai_vocab::TurtleRenderer;
 use std::rc::Rc;
@@ -56,6 +57,8 @@ impl Endpoint for Greeter {
 /// mounts the live terminal). Composition recurses — `urn:data:about` is itself a
 /// shape with its own marker.
 const PAGE_HTML: &str = r#"
+$a{urn:host:identity}
+
 <h1>A page assembled by ikigai</h1>
 <p class="sub">This whole page is <b>one resource</b>. The browser issued a single
    <code>compose(urn:data:page)</code>; the in-browser kernel resolved the page shape and
@@ -162,6 +165,50 @@ fn host_info(nature: &'static str) -> FnEndpoint {
     )
 }
 
+/// `urn:host:identity` — the login affordance, rendered **from the session capability**
+/// (the capability *is* the identity). Composed into the top of the page via a
+/// `$a{urn:host:identity}` marker, so the sign-in/out link is part of the page resource
+/// (HATEOAS), not bolted-on chrome. After a passkey login the page re-resolves this one
+/// resource and swaps it in. Uncacheable — it reflects live session state.
+///
+/// Anonymous (root authority) renders a "Sign in with passkey" link; a session holding
+/// `urn:cap:fs:read:ws/<id>` renders the `ws/<id>` identity chip plus "Sign out". The
+/// imperative WebAuthn ceremony behind `#ik-login`/`#ik-logout` lives in the page's one
+/// glue bridge (index.html), the same shape as the htmx `/k/<cmd>` adapter.
+fn host_identity() -> FnEndpoint {
+    FnEndpoint::new("host-identity", move |inv: &Invocation<'_>| {
+        // The per-client file scope a login mints; its `<id>` is the workspace segment.
+        let client = inv.capability.scopes().and_then(|scopes| {
+            scopes
+                .iter()
+                .find_map(|s| s.strip_prefix("urn:cap:fs:read:ws/"))
+        });
+        let body = match client {
+            Some(id) => format!(
+                "<nav class=\"ik-id ik-id-in\">signed in · <code>ws/{id}</code> \
+                 <a href=\"#\" id=\"ik-logout\" class=\"ik-id-link\">Sign out</a></nav>"
+            ),
+            None => "<nav class=\"ik-id\">\
+                 <a href=\"#\" id=\"ik-login\" class=\"ik-id-link\">🔑 Sign in with a passkey</a> \
+                 <span class=\"ik-id-hint\">— scopes a private workspace segment to you</span>\
+                 </nav>"
+                .to_string(),
+        };
+        Ok(Representation::new(
+            ReprType::new("text/html").with_param("charset", "utf-8"),
+            body.into_bytes(),
+        ))
+    })
+    .with_description(
+        Description::new("host-identity")
+            .title("Identity")
+            .summary("The passkey sign-in/out affordance, rendered from the session capability.")
+            .verb(Verb::Source)
+            .verb(Verb::Meta)
+            .output("text/html;charset=utf-8"),
+    )
+}
+
 /// Build the in-page kernel with the host `nature` reported by `urn:host:info`:
 /// the demo endpoints, `compose`, and the page shapes, behind the JSON-or-Turtle
 /// meta renderer. One kernel drives both the composed page and the terminal, so
@@ -180,6 +227,7 @@ pub fn build_kernel(nature: &'static str) -> Kernel {
         .bind(Exact::new("urn:data:page"), shape("page", PAGE_HTML))
         .bind(Exact::new("urn:data:about"), shape("about", ABOUT_HTML))
         .bind(Exact::new("urn:host:info"), host_info(nature))
+        .bind(Exact::new("urn:host:identity"), host_identity())
         // The capability-gated file module on its browser backend: `urn:file:{path}`
         // resolves to `localStorage` (keyed `ikigai:fs:ws/<path>`), jailed to the
         // virtual `ws` root. Same module, same `file:` contract as the native CLI —
@@ -420,6 +468,43 @@ pub fn eval_line_async(line: String) -> js_sys::Promise {
     wasm_bindgen_futures::future_to_promise(async move {
         Ok(JsValue::from_str(&eval_to_json(engine.eval_async(&line).await)))
     })
+}
+
+/// Establish a per-client session identity from a passkey-derived `clientId`, scoping
+/// the workspace to `ws/<clientId>`: the session mints `urn:cap:fs:{read,write,delete}:
+/// ws/<id>` and resolves under it, so files land under your private segment and another
+/// identity's segment is refused by the resolver. Returns the workspace label `ws/<id>`.
+///
+/// Serverless WebAuthn has no relying party to verify the assertion, so this is identity
+/// *selection*, not authenticated login; the isolation is the capability/resource model,
+/// not cryptography (the bytes are still visible in devtools). The page calls this after
+/// the passkey ceremony, then re-resolves `urn:host:identity` to reflect the new state.
+#[wasm_bindgen(js_name = login)]
+pub fn login(client_id: String) -> String {
+    // The id comes from a hex digest, but defend the path segment regardless — only
+    // `[a-z0-9]`, so a crafted id can't smuggle `/`, `..`, or whitespace into a scope.
+    let id: String = client_id
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .take(32)
+        .collect::<String>()
+        .to_ascii_lowercase();
+    let id = if id.is_empty() { "anon".to_string() } else { id };
+    let scopes = [
+        format!("urn:cap:fs:read:ws/{id}"),
+        format!("urn:cap:fs:write:ws/{id}"),
+        format!("urn:cap:fs:delete:ws/{id}"),
+    ];
+    let cap = Capability::root().attenuate(scopes);
+    ENGINE.with(|engine| engine.login(cap));
+    format!("ws/{id}")
+}
+
+/// Drop back to the anonymous (root) session — the state before any [`login`]. The page
+/// calls this on "Sign out", then re-resolves `urn:host:identity`.
+#[wasm_bindgen(js_name = logout)]
+pub fn logout() {
+    ENGINE.with(|engine| engine.logout());
 }
 
 /// Encode an [`Action`](ikigai_engine::Action) as the `{ kind, text, cache }` JSON

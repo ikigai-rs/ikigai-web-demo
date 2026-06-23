@@ -49,6 +49,18 @@
   .rb-cmd { color: #7a3e9d; font: 12px ui-monospace, Menlo, monospace; margin-left: 8px; }
   .rb-note { color: #777; font-size: 12.5px; margin-left: 8px; }
   .rb-out { background: #0f1419; color: #d7dde3; border-radius: 8px; padding: 10px 12px; margin-top: 12px; min-height: 1.4em; white-space: pre-wrap; font: 13px ui-monospace, Menlo, monospace; }
+
+  /* Passkey identity — the sign-in/out affordance is rendered by urn:host:identity
+     (composed into the top of the page); these styles dress it. */
+  .ik-id { margin: 0 0 18px; padding: 8px 13px; background: #f6f9fb; border: 1px solid #dfe2e5; border-radius: 8px; font-size: 14px; color: #555; }
+  .ik-id-in { background: #eef7ee; border-color: #cfe6cf; }
+  .ik-id-link { color: #1f7199; cursor: pointer; text-decoration: none; font-weight: 600; }
+  .ik-id-link:hover { text-decoration: underline; }
+  .ik-id-hint { color: #888; font-size: 13px; }
+  .ik-try { margin: -8px 0 18px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .ik-try .ik-try-label { color: #777; font-size: 13px; }
+  .ik-try button { background: #f3f6f9; color: #1f7199; border: 1px solid #ccd6dd; border-radius: 6px; padding: 4px 10px; font: 12.5px ui-monospace, Menlo, monospace; cursor: pointer; }
+  .ik-try button:hover { background: #e7eef3; border-color: #1f7199; }
 </style>
 <script src="https://unpkg.com/htmx.org@2.0.4"></script>
 </head>
@@ -58,7 +70,7 @@
 <section id="runbook" aria-label="ikigai runbook">loading runbook…</section>
 
 <script type="module">
-import init, { evalLineAsync } from './ikigai_web_demo.js';
+import init, { evalLineAsync, login, logout } from './ikigai_web_demo.js';
 
 // The live terminal: a custom element that self-wires when the composed HTML
 // (which contains <ikigai-cli>) is inserted. It drives the same Engine as the page.
@@ -162,6 +174,105 @@ document.body.addEventListener('htmx:beforeRequest', (evt) => {
 });
 // Bootstrap the first tab now the kernel is ready.
 runKernel('source urn:runbook:basics as=text/html', document.getElementById('runbook'), 'innerHTML');
+
+// --- Passkey identity bridge ----------------------------------------------
+// The ONE bit of imperative glue for identity (the WebAuthn ceremony, which only a
+// browser API can do — the same "one small bridge" shape as the runbook adapter
+// above). The affordance itself is the urn:host:identity resource composed at the top
+// of the page; clicking its links runs the passkey ceremony, mints a per-client
+// capability via the wasm `login`, then re-resolves urn:host:identity so the page
+// reflects the new identity (HATEOAS — state lives in the representation).
+const PK_KEY = 'ikigai:passkey:credId';
+const b64urlToBytes = (s) => {
+  s = s.replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(s + '='.repeat((4 - (s.length % 4)) % 4));
+  return Uint8Array.from(bin, (c) => c.charCodeAt(0));
+};
+const bytesToB64url = (buf) =>
+  btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+async function clientIdFromRawId(rawId) {
+  const digest = await crypto.subtle.digest('SHA-256', rawId);
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 12);
+}
+
+// Serverless WebAuthn: no relying party to verify the assertion, so this is identity
+// *selection/derivation*, not authenticated login. The credential's id is stable, so a
+// SHA-256 of it gives a stable per-passkey client id that keys the workspace segment.
+async function passkeyLogin() {
+  const challenge = crypto.getRandomValues(new Uint8Array(32));
+  const stored = localStorage.getItem(PK_KEY);
+  let rawId;
+  if (stored) {
+    const assertion = await navigator.credentials.get({ publicKey: {
+      challenge, rpId: location.hostname, userVerification: 'preferred',
+      allowCredentials: [{ type: 'public-key', id: b64urlToBytes(stored) }],
+    } });
+    rawId = assertion.rawId;
+  } else {
+    const cred = await navigator.credentials.create({ publicKey: {
+      challenge, rp: { name: 'ikigai', id: location.hostname },
+      user: { id: crypto.getRandomValues(new Uint8Array(16)), name: 'ikigai-user', displayName: 'ikigai user' },
+      pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
+      authenticatorSelection: { userVerification: 'preferred' },
+    } });
+    rawId = cred.rawId;
+    localStorage.setItem(PK_KEY, bytesToB64url(rawId));
+  }
+  const ws = login(await clientIdFromRawId(rawId)); // wasm: scope the session to ws/<id>
+  await refreshIdentity(ws);
+}
+
+// Re-resolve the affordance and reflect it in the page; render the "try it" boundary
+// demo when signed in (`ws` is the workspace label, or null when anonymous).
+async function refreshIdentity(ws) {
+  const r = JSON.parse(await evalLineAsync('source urn:host:identity'));
+  const nav = document.querySelector('#app .ik-id');
+  if (nav && r.kind === 'output') nav.outerHTML = r.text;
+  renderTry(ws);
+}
+
+// A minimal walkthrough proving the segment boundary with a single passkey: write and
+// read under ws/<id>, then watch a write *outside* your segment get refused — your
+// capability grants only your own segment. (Buttons run through the live terminal.)
+function renderTry(ws) {
+  const old = document.getElementById('ik-try');
+  if (old) old.remove();
+  if (!ws) return;
+  const id = ws.slice(3); // "ws/<id>" → "<id>"
+  const panel = document.createElement('div');
+  panel.id = 'ik-try';
+  panel.className = 'ik-try';
+  panel.innerHTML = '<span class="ik-try-label">try your segment:</span>';
+  const steps = [
+    ['write a private note', `sink urn:file:${id}/secret.txt mine only`],
+    ['read it back', `source urn:file:${id}/secret.txt`],
+    ['write outside it → denied', `sink urn:file:someone-else/secret.txt nope`],
+  ];
+  for (const [label, cmd] of steps) {
+    const b = document.createElement('button');
+    b.textContent = label;
+    b.title = cmd;
+    b.addEventListener('click', () => {
+      const cli = document.querySelector('ikigai-cli');
+      if (cli) { cli.submit(cmd); cli.scrollIntoView({ block: 'nearest' }); }
+    });
+    panel.appendChild(b);
+  }
+  document.querySelector('#app .ik-id').after(panel);
+}
+
+document.body.addEventListener('click', async (e) => {
+  const link = e.target.closest('#ik-login, #ik-logout');
+  if (!link) return;
+  e.preventDefault();
+  if (link.id === 'ik-login') {
+    try { await passkeyLogin(); }
+    catch (err) { alert('passkey sign-in failed or was cancelled:\n' + err); }
+  } else {
+    logout();
+    await refreshIdentity(null);
+  }
+});
 </script>
 </body>
 </html>
