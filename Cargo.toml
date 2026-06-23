@@ -18,7 +18,7 @@ path = "src/bin/server.rs"
 # Published crates from crates.io (graduated off the sibling path deps once
 # ikigai-core/ikigai-vocab were published at 0.1.0). This demo is a standalone
 # proof, intentionally not part of either repo's CI.
-ikigai-core = "0.1.10"  # golden thread + the urn:kernel:* namespace (cut/threads/cache)
+ikigai-core = "0.1.20"  # capability-keyed cache + Capability::clamp
 # The reusable function library, linked in as a published module crate.
 # Compiled to wasm32 alongside this lib — the in-browser proof of module linkage.
 ikigai-fn = "0.1.0"
@@ -29,8 +29,8 @@ ikigai-vocab = "0.1"
 # The CLI's renderer-agnostic Engine — drives the in-page terminal — and its Resolver
 # seam. 0.1.4 is the async API (eval_async / issue_as_async) that lets the in-page
 # terminal drive the kernel on the JS event loop (M2).
-ikigai-engine = "0.1.4"
-ikigai-resolve = "0.1.4"
+ikigai-engine = "0.1.5"  # Engine::login/logout + login resources
+ikigai-resolve = "0.1.5"  # is_cached carries &Capability
 # The on-wire Call/Reply protocol — the WASM codec (network demo) speaks it in the
 # browser, and the server speaks it on the other end. Same bytes as ikigai-ipc/quic.
 ikigai-wire = "0.1"
@@ -40,7 +40,7 @@ ikigai-wire = "0.1"
 ikigai-http = "0.1.1"
 # Interactive runbook module (urn:runbook:*) — same module the CLI links; local path
 # during dev, publish/git when stable (like engine/resolve).
-ikigai-runbook = "0.1.0"
+ikigai-runbook = "0.1.2"  # host-extensible tab strip (add_tab)
 # oneshot channel: the browser fetch transport confines the !Send `fetch` to a
 # spawn_local task and bridges the (Send) result back, so `HttpTransport::send` stays
 # Send as the trait requires.
