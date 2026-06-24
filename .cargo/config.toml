@@ -1,0 +1,6 @@
+# oxrdf/oxrdfio (pulled in transitively by ikigai-rdf) depend on getrandom 0.3, which on
+# wasm32-unknown-unknown needs an explicit backend. Pair this rustflag with the
+# `getrandom = { features = ["wasm_js"] }` wasm-target dep in ikigai-rdf. Without it the
+# wasm build fails to link getrandom. (The Pages/deploy build needs the same flag.)
+[target.wasm32-unknown-unknown]
+rustflags = ['--cfg', 'getrandom_backend="wasm_js"']

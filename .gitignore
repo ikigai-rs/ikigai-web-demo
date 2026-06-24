@@ -1,11 +1,19 @@
 /target
-/.cargo/config.toml   # temporary local-core redirect for pre-publish dev; remove once ikigai-core 0.1.5 is published
+# .cargo/config.toml is committed — it carries the wasm getrandom backend flag the
+# (oxrdf-dependent) wasm build needs, including on CI.
 /dist-node
+# The host wasm + its JS bindings are CI-generated; the lazy XSLT module wasm + its
+# bindings + the loader are committed (the module is a separate crate, built locally
+# and updated rarely) and served alongside.
 /dist/*.js
+!/dist/xslt-loader.js
+!/dist/ikigai_xslt_module.js
 /dist/*.wasm
+!/dist/ikigai_xslt_module_bg.wasm
 /dist/*.d.ts
 Cargo.lock
 .DS_Store
 *~
 *.swp
 *~undo-tree~
+/.claude/

@@ -96,8 +96,6 @@
 <body>
 <main id="app">…</main>
 
-<section id="runbook" aria-label="ikigai runbook">loading runbook…</section>
-
 <script type="module">
 import init, { evalLineAsync, hostResolve } from './ikigai_web_demo.js';
 // The dynamically-loaded XSLT module (urn:xslt:transform). The ~2.4 MB module wasm
@@ -217,8 +215,8 @@ document.body.addEventListener('htmx:beforeRequest', (evt) => {
   const cmd = decodeURIComponent(path.slice(path.indexOf('/k/') + 3));
   runKernel(cmd, evt.detail.target, elt.getAttribute('hx-swap'));
 });
-// Bootstrap the first tab now the kernel is ready.
-runKernel('source urn:runbook:basics as=text/html', document.getElementById('runbook'), 'innerHTML');
+// (The runbook now lives on the Demo page — urn:data:demo — and bootstraps itself via
+// hx-trigger="load" when that page is opened from the toolbar.)
 
 // --- Passkey identity bridge ----------------------------------------------
 // The ONE bit of imperative glue for identity: the WebAuthn ceremony, which only a

@@ -18,7 +18,7 @@ path = "src/bin/server.rs"
 # Published crates from crates.io (graduated off the sibling path deps once
 # ikigai-core/ikigai-vocab were published at 0.1.0). This demo is a standalone
 # proof, intentionally not part of either repo's CI.
-ikigai-core = "0.1.20"  # capability-keyed cache + Capability::clamp
+ikigai-core = "0.1.21"  # capability-keyed cache + Capability::clamp
 # The reusable function library, linked in as a published module crate.
 # Compiled to wasm32 alongside this lib — the in-browser proof of module linkage.
 ikigai-fn = "0.1.0"
@@ -29,8 +29,8 @@ ikigai-vocab = "0.1"
 # The CLI's renderer-agnostic Engine — drives the in-page terminal — and its Resolver
 # seam. 0.1.4 is the async API (eval_async / issue_as_async) that lets the in-page
 # terminal drive the kernel on the JS event loop (M2).
-ikigai-engine = "0.1.5"  # Engine::login/logout + login resources
-ikigai-resolve = "0.1.5"  # is_cached carries &Capability
+ikigai-engine = "0.1.6"  # Engine::login/logout + login resources
+ikigai-resolve = "0.1.6"  # is_cached carries &Capability
 # The on-wire Call/Reply protocol — the WASM codec (network demo) speaks it in the
 # browser, and the server speaks it on the other end. Same bytes as ikigai-ipc/quic.
 ikigai-wire = "0.1"
@@ -40,7 +40,12 @@ ikigai-wire = "0.1"
 ikigai-http = "0.1.1"
 # Interactive runbook module (urn:runbook:*) — same module the CLI links; local path
 # during dev, publish/git when stable (like engine/resolve).
-ikigai-runbook = "0.1.2"  # host-extensible tab strip (add_tab)
+ikigai-runbook = "0.1.3"  # host-extensible tab strip (add_tab)
+# RDF transreption module (urn:rdf:transrept) from the ikigai-linkeddata workspace —
+# parses an RDF syntax and re-serializes to another (or to an HTML table), client-side
+# in wasm. The catalog + FOAF render to HTML through this. (SPARQL deferred to a later
+# slice.) Unpublished during dev — supplied by the [patch.crates-io] below.
+ikigai-rdf = "0.1.0"
 # oneshot channel: the browser fetch transport confines the !Send `fetch` to a
 # spawn_local task and bridges the (Send) result back, so `HttpTransport::send` stays
 # Send as the trait requires.
@@ -57,6 +62,9 @@ console_error_panic_hook = "0.1"
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 wtransport = "0.7"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util"] }
+# XSLT linked natively (the server can't lazy-load a wasm module). On wasm the host
+# instead lazy-loads `ikigai-xslt-module` (xrust kept OUT of the host wasm) — Phase 2.
+ikigai-xslt = "0.1.0"
 
 # wasm-only: the cross-tab `storage` event, used to cut golden threads when another
 # tab (or page JS) changes a workspace file — the browser's filesystem watcher.
