@@ -23,25 +23,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-
-      - uses: Swatinem/rust-cache@v2
-
-      # Prebuilt wasm-bindgen-cli, pinned to the version in Cargo.toml.
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: wasm-bindgen-cli@0.2.108
-
-      - name: Build WASM + JS bindings into dist/
-        run: |
-          # --lib only: the native WebTransport server bin (src/bin/server.rs)
-          # isn't part of the wasm build.
-          cargo build --release --lib --target wasm32-unknown-unknown
-          wasm-bindgen --target web --out-dir dist \
-            target/wasm32-unknown-unknown/release/ikigai_web_demo.wasm
-
+      # TEMPORARY: deploy the pre-built dist/ committed to the repo (host wasm + the
+      # lazy-loaded ikigai-xslt-module wasm + xslt-loader.js), rather than rebuilding on
+      # CI. The dynamic module is a separate build, and the upstream crates aren't on
+      # crates.io yet — so for now the demo is built locally and committed. Restore the
+      # cargo build + wasm-bindgen steps (and build the module too) once the crates
+      # publish.
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

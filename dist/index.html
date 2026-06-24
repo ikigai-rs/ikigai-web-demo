@@ -49,6 +49,35 @@
   .rb-cmd { color: #7a3e9d; font: 12px ui-monospace, Menlo, monospace; margin-left: 8px; }
   .rb-note { color: #777; font-size: 12.5px; margin-left: 8px; }
   .rb-out { background: #0f1419; color: #d7dde3; border-radius: 8px; padding: 10px 12px; margin-top: 12px; min-height: 1.4em; white-space: pre-wrap; font: 13px ui-monospace, Menlo, monospace; }
+  .rb-outbar { display: flex; justify-content: flex-end; margin-top: 12px; }
+  .rb-clear { background: transparent; color: #777; border: 1px solid #ccd6dd; border-radius: 6px; padding: 3px 10px; font: 12px system-ui, sans-serif; cursor: pointer; }
+  .rb-clear:hover { background: #f3f6f9; color: #1f7199; border-color: #1f7199; }
+  /* An inline button styled as a link — cross-links from the runbook tab to a page. */
+  .rb-link { background: none; border: 0; padding: 0; color: #1f7199; font: inherit; cursor: pointer; text-decoration: underline; }
+  .rb-link:hover { color: #155a7a; }
+
+  /* Page toolbar — htmx nav between page resources (Home / Catalog / …). Each page
+     carries the whole strip (HATEOAS); the active link is marked server-side. Wraps on
+     narrow screens. */
+  .ik-toolbar { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 18px; border-bottom: 1px solid #dfe2e5; }
+  .ik-nav { background: transparent; border: 0; border-bottom: 2px solid transparent; padding: 8px 14px; font: 14.5px system-ui, sans-serif; color: #1f7199; cursor: pointer; }
+  .ik-nav:hover { background: #f3f6f9; }
+  .ik-nav.selected { border-bottom-color: #1f7199; font-weight: 600; }
+
+  /* Endpoint cards — the catalog RDF/XML styled by urn:xslt:transform. A responsive
+     grid that collapses to one column on a phone. */
+  .cards-pane { margin-top: 14px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+  .card { border: 1px solid #dfe2e5; border-radius: 10px; padding: 12px 14px; background: #fff; display: flex; flex-direction: column; gap: 7px; }
+  .card:hover { border-color: #1f7199; box-shadow: 0 1px 6px rgba(31,113,153,0.08); }
+  .card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .card-title { font-size: 15px; color: #1f7199; margin: 0; }
+  .card-id { font: 11.5px ui-monospace, Menlo, monospace; color: #7a3e9d; background: #f6f2fb; border-radius: 4px; padding: 1px 6px; white-space: nowrap; }
+  .card-summary { margin: 0; font-size: 13px; color: #444; line-height: 1.5; flex: 1; }
+  .card-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
+  .card-verbs { display: flex; gap: 4px; flex-wrap: wrap; }
+  .verb { font: 11px system-ui, sans-serif; color: #2e7d32; background: #eef7ee; border-radius: 4px; padding: 1px 7px; }
+  .card-out { font: 11px ui-monospace, Menlo, monospace; color: #888; }
 
   /* Passkey identity — the sign-in/out affordance is rendered by urn:host:identity
      (composed into the top of the page); these styles dress it. */
@@ -70,7 +99,15 @@
 <section id="runbook" aria-label="ikigai runbook">loading runbook…</section>
 
 <script type="module">
-import init, { evalLineAsync } from './ikigai_web_demo.js';
+import init, { evalLineAsync, hostResolve } from './ikigai_web_demo.js';
+// The dynamically-loaded XSLT module (urn:xslt:transform). The ~2.4 MB module wasm
+// (xrust) is fetched only on the first call — opening the Catalog page — not in the
+// host's initial load. By REFERENCE: the host passes the src/stylesheet IRIs and the
+// module resolves them itself by calling back to `hostResolve` (this kernel) — a
+// bidirectional channel between the two wasm instances.
+import { xslt_transform_refs } from './xslt-loader.js';
+window.hostResolve = (uri) => hostResolve(uri);
+window.xsltTransformRefs = (srcUri, styleUri, text) => xslt_transform_refs(srcUri, styleUri, text);
 
 // The live terminal: a custom element that self-wires when the composed HTML
 // (which contains <ikigai-cli>) is inserted. It drives the same Engine as the page.
@@ -140,8 +177,10 @@ await init();
 // The whole page is one resource: compose it through the Engine and inject the
 // result. The composed HTML contains <ikigai-cli>, which self-wires on insertion.
 try {
+  const app = document.getElementById('app');
   const r = JSON.parse(await evalLineAsync('source urn:fn:compose src=urn:data:page'));
-  document.getElementById('app').innerHTML = r.kind === 'output' ? r.text : ('compose error: ' + r.text);
+  app.innerHTML = r.kind === 'output' ? r.text : ('compose error: ' + r.text);
+  htmx.process(app); // wire the page toolbar's hx-* so inter-page nav works on first load
 } catch (e) {
   document.getElementById('app').textContent = 'error: ' + e;
 }
@@ -156,6 +195,9 @@ try {
 function runKernel(cmd, target, swapStyle) {
   return evalLineAsync(cmd).then((res) => {
     const r = JSON.parse(res);
+    // `clear` empties its target (the runbook output pane) — the same engine command
+    // the terminal uses to wipe its transcript, here wired to a button.
+    if (r.kind === 'clear') { target.textContent = ''; return; }
     if ((swapStyle || 'innerHTML') === 'beforeend') {
       // Append the cache outcome (computed / cached / uncacheable) after the output,
       // so the runbook step shows it inline — no need to switch to the REPL to see it.
