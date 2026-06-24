@@ -56,7 +56,12 @@ impl Endpoint for Greeter {
 /// markers transclude other resources in this kernel (one of them, `urn:demo:web-cli`,
 /// mounts the live terminal). Composition recurses — `urn:data:about` is itself a
 /// shape with its own marker.
-const PAGE_HTML: &str = r#"
+const PAGE_HTML: &str = r##"
+<nav class="ik-toolbar" aria-label="pages">
+  <button class="ik-nav selected" hx-get="/k/source urn:fn:compose src=urn:data:page" hx-target="#app" hx-swap="innerHTML" aria-current="page">Home</button>
+  <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:docs" hx-target="#app" hx-swap="innerHTML">Catalog</button>
+  <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:demo" hx-target="#app" hx-swap="innerHTML">Demo</button>
+</nav>
 <h1>A page assembled by ikigai</h1>
 <p class="sub">This whole page is <b>one resource</b>. The browser issued a single
    <code>compose(urn:data:page)</code>; the in-browser kernel resolved the page shape and
@@ -76,7 +81,83 @@ const PAGE_HTML: &str = r#"
 </article>
 
 $a{urn:demo:web-cli}
-"#;
+"##;
+
+/// `urn:data:docs` — a second page, reached from the toolbar. It carries the same
+/// toolbar (HATEOAS: the nav lives in the representation, so "which page" is the HTML
+/// the kernel returns, not client state) and renders the kernel's own **catalog** as an
+/// HTML table. The table is loaded with a single htmx `hx-trigger="load"` that resolves
+/// `urn:kernel:catalog | urn:rdf:transrept as=text/html` through the in-page kernel — so
+/// the catalog arrives as *rendered* HTML, not escaped source, with no bespoke JS. This
+/// is the inter-page-linking testbed; `urn:data:cache` / `urn:data:trace` slot in later,
+/// and become real HTTP resources once ikigai is served externally.
+const DOCS_HTML: &str = r##"
+<nav class="ik-toolbar" aria-label="pages">
+  <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:page" hx-target="#app" hx-swap="innerHTML">Home</button>
+  <button class="ik-nav selected" hx-get="/k/source urn:fn:compose src=urn:data:docs" hx-target="#app" hx-swap="innerHTML" aria-current="page">Catalog</button>
+  <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:demo" hx-target="#app" hx-swap="innerHTML">Demo</button>
+</nav>
+<h1>The catalog</h1>
+<p class="sub">The kernel describes itself. <code>urn:kernel:catalog</code> emits every bound
+   endpoint as RDF; here it's transrepted to RDF/XML and styled into cards by an
+   <code>urn:xslt:transform</code> — <b>src</b> and <b>stylesheet</b> both cacheable resource
+   references, all client-side in WebAssembly. Swap the stylesheet, restyle the same graph.
+   Turtle all the way down.</p>
+<div id="ik-docs-catalog" class="cards-pane"
+     hx-get="/k/source urn:xslt:transform src=urn:data:catalog.rdf stylesheet=urn:style:catalog-cards"
+     hx-trigger="load" hx-swap="innerHTML">resolving the catalog…</div>
+"##;
+
+/// `urn:data:demo` — the guided-demos page, reached from the toolbar. Carries the same
+/// toolbar (Demo active) and hosts the runbook tab strip. The `#runbook` section
+/// bootstraps via `hx-trigger="load"` (like the Catalog cards-pane), and the runbook's
+/// own tabs/steps swap `#runbook` from there. Moving the runbook here keeps the Home page
+/// about composition and gives the demos their own page.
+const DEMO_HTML: &str = r##"
+<nav class="ik-toolbar" aria-label="pages">
+  <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:page" hx-target="#app" hx-swap="innerHTML">Home</button>
+  <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:docs" hx-target="#app" hx-swap="innerHTML">Catalog</button>
+  <button class="ik-nav selected" hx-get="/k/source urn:fn:compose src=urn:data:demo" hx-target="#app" hx-swap="innerHTML" aria-current="page">Demo</button>
+</nav>
+<h1>Guided demos</h1>
+<p class="sub">Runnable walkthroughs — each tab is a <code>urn:runbook:*</code> resource rendered
+   as htmx (HATEOAS); switching tabs and running steps are both just "resolve a resource."</p>
+<section id="runbook" aria-label="ikigai runbook"
+     hx-get="/k/source urn:runbook:basics as=text/html" hx-trigger="load" hx-swap="innerHTML">loading runbook…</section>
+"##;
+
+/// `urn:style:catalog-cards` — the XSLT stylesheet (a resource) that styles the catalog
+/// RDF/XML into a grid of endpoint cards. One `xsl:template match="ik:Endpoint"` emits a
+/// card per endpoint; XSLT does the per-endpoint iteration. Swapping this resource
+/// restyles the same cached graph — the reuse the XSLT module buys.
+const CATALOG_CARDS_XSL: &str = r#"<xsl:stylesheet version="1.0"
+  xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+  xmlns:ik="https://ikigai-rs.dev/ns#">
+  <xsl:output method="html"/>
+  <xsl:template match="/">
+    <div class="cards"><xsl:apply-templates select="//ik:Endpoint"/></div>
+  </xsl:template>
+  <xsl:template match="ik:Endpoint">
+    <article class="card">
+      <div class="card-head">
+        <h3 class="card-title">
+          <xsl:choose>
+            <xsl:when test="ik:title"><xsl:value-of select="ik:title"/></xsl:when>
+            <xsl:otherwise><xsl:value-of select="ik:id"/></xsl:otherwise>
+          </xsl:choose>
+        </h3>
+        <code class="card-id"><xsl:value-of select="ik:id"/></code>
+      </div>
+      <xsl:if test="ik:summary"><p class="card-summary"><xsl:value-of select="ik:summary"/></p></xsl:if>
+      <xsl:if test="ik:verb or ik:output">
+        <div class="card-meta">
+          <span class="card-verbs"><xsl:for-each select="ik:verb"><span class="verb"><xsl:value-of select="."/></span></xsl:for-each></span>
+          <xsl:if test="ik:output"><code class="card-out"><xsl:value-of select="ik:output"/></code></xsl:if>
+        </div>
+      </xsl:if>
+    </article>
+  </xsl:template>
+</xsl:stylesheet>"#;
 
 /// `urn:data:about` — a nested shape the page transcludes, which itself transcludes
 /// another resource. Proof that composition recurses.
@@ -103,7 +184,9 @@ const WEB_CLI_HTML: &str = r#"<section class="cli-mount">
 </section>"#;
 
 /// A `text/html` shape endpoint returning a fixed body (which carries `$a{}` markers).
-fn shape(name: &'static str, html: &'static str) -> FnEndpoint {
+/// The `title`/`summary` give it a real self-description, so it shows up as a proper
+/// card in `urn:kernel:catalog` (and in `list`/Meta) rather than a bare id.
+fn shape(name: &'static str, title: &'static str, summary: &'static str, html: &'static str) -> FnEndpoint {
     FnEndpoint::new(name, move |_inv: &Invocation<'_>| {
         Ok(Representation::new(
             ReprType::new("text/html").with_param("charset", "utf-8"),
@@ -111,6 +194,14 @@ fn shape(name: &'static str, html: &'static str) -> FnEndpoint {
         )
         .cacheable())
     })
+    .with_description(
+        Description::new(name)
+            .title(title)
+            .summary(summary)
+            .verb(Verb::Source)
+            .verb(Verb::Meta)
+            .output("text/html;charset=utf-8"),
+    )
 }
 
 /// Turtle / plain-text self-descriptions, plus an `application/json` projection —
@@ -275,6 +366,151 @@ fn runbook_identity() -> FnEndpoint {
     )
 }
 
+/// `urn:data:catalog.rdf` — the kernel's catalog as RDF/XML, a resource. It resolves
+/// `urn:kernel:catalog` (Turtle) through the kernel and transrepts it, so this resource
+/// depends on the catalog's golden thread and is cacheable. The Catalog page's XSLT cards
+/// reference it as their `src` — both src and stylesheet are named, cacheable resources.
+struct CatalogRdf;
+
+#[async_trait]
+impl Endpoint for CatalogRdf {
+    async fn invoke(&self, inv: &Invocation<'_>) -> Result<Representation> {
+        let catalog = inv
+            .source(&Iri::parse("urn:kernel:catalog").expect("valid iri"))
+            .await?;
+        // Transrept the Turtle to RDF/XML through the kernel (composes the cache: this
+        // resource is cacheable and invalidates with the catalog).
+        let transrept =
+            Request::new(Verb::Source, Iri::parse("urn:rdf:transrept").expect("valid iri"))
+                .with_arg("content", ArgRef::Inline(catalog.bytes))
+                .with_arg("as", ArgRef::Inline(b"application/rdf+xml".to_vec()));
+        inv.issue(transrept).await
+    }
+
+    fn name(&self) -> &str {
+        "catalog-rdf"
+    }
+
+    fn describe(&self) -> Description {
+        Description::new("catalog-rdf")
+            .title("Catalog (RDF/XML)")
+            .summary("The kernel's catalog transrepted to RDF/XML — the src for the cards stylesheet.")
+            .verb(Verb::Source)
+            .verb(Verb::Meta)
+            .output("application/rdf+xml")
+    }
+}
+
+/// The XSLT module as a **dynamically-loaded** wasm artifact (Phase 2, by-value). On
+/// wasm the host doesn't link xrust at all: it resolves the `src`/`stylesheet` resource
+/// references itself, then hands the bytes to `ikigai-xslt-module` — a separate ~2.4 MB
+/// wasm fetched + instantiated only on first use (see `dist/xslt-loader.js`). The native
+/// server keeps xslt linked (no lazy-load machinery there), the same split as CLI-links /
+/// browser-loads.
+#[cfg(target_family = "wasm")]
+mod xslt_module {
+    use super::*;
+
+    // The host calls a global `xsltTransformRefs` that index.html wires to the lazy
+    // loader; the heavy module wasm loads inside it on first call. By reference: the host
+    // passes the `src`/`stylesheet` IRIs and the module resolves them itself by calling
+    // back to `hostResolve` (this kernel) — see `dist/xslt-loader.js`.
+    #[wasm_bindgen]
+    extern "C" {
+        #[wasm_bindgen(catch, js_name = "xsltTransformRefs")]
+        async fn xslt_transform_refs(
+            src_uri: &str,
+            style_uri: &str,
+            text: bool,
+        ) -> std::result::Result<JsValue, JsValue>;
+    }
+
+    struct XsltModuleEndpoint;
+
+    #[async_trait]
+    impl Endpoint for XsltModuleEndpoint {
+        async fn invoke(&self, inv: &Invocation<'_>) -> Result<Representation> {
+            // By reference: pass the `src`/`stylesheet` IRIs to the module, which resolves
+            // them itself by calling back to this kernel (`hostResolve`).
+            let src_uri = inv
+                .inline_str("src")
+                .map_err(|_| Error::Endpoint("urn:xslt:transform needs `src=<uri>`".to_string()))?
+                .to_string();
+            let style_uri = inv
+                .inline_str("stylesheet")
+                .map_err(|_| {
+                    Error::Endpoint("urn:xslt:transform needs `stylesheet=<uri>`".to_string())
+                })?
+                .to_string();
+            let media = inv.inline_str("as").unwrap_or("text/html").to_string();
+            let text = media.split(';').next().unwrap_or(&media).trim() == "text/plain";
+
+            let html = call_module(src_uri, style_uri, text).await?;
+            Ok(Representation::new(
+                ReprType::new(media).with_param("charset", "utf-8"),
+                html.into_bytes(),
+            )
+            .cacheable())
+        }
+
+        fn name(&self) -> &str {
+            "xslt-transform"
+        }
+
+        fn describe(&self) -> Description {
+            use ikigai_core::ArgSpec;
+            Description::new("xslt-transform")
+                .title("XSLT transform")
+                .summary(
+                    "Apply an XSLT stylesheet to a source document, both as cacheable resource \
+                     references. Runs in a dynamically-loaded wasm module (xrust), fetched on \
+                     first use.",
+                )
+                .verb(Verb::Source)
+                .verb(Verb::Meta)
+                .input(ArgSpec::new("src").summary("the source XML/RDF-XML resource IRI"))
+                .input(ArgSpec::new("stylesheet").summary("the XSLT stylesheet resource IRI"))
+                .input(ArgSpec::new("as").summary("output media type (default text/html)"))
+                .output("text/html;charset=utf-8")
+        }
+    }
+
+    /// Call the lazy-loaded module by reference. `xslt_transform_refs` holds `JsValue`
+    /// (`!Send`), so — exactly like `BrowserFetchTransport` — confine it to a
+    /// `spawn_local` task and bridge the (`Send`) `String` result back through a oneshot,
+    /// keeping the endpoint future `Send` as the `Endpoint` trait requires. The module's
+    /// own callbacks to `hostResolve` run on the event loop while this task awaits.
+    async fn call_module(src_uri: String, style_uri: String, text: bool) -> Result<String> {
+        let (tx, rx) = futures::channel::oneshot::channel();
+        wasm_bindgen_futures::spawn_local(async move {
+            let result = xslt_transform_refs(&src_uri, &style_uri, text)
+                .await
+                .map(|v| v.as_string().unwrap_or_default())
+                .map_err(|e| e.as_string().unwrap_or_else(|| "xslt transform failed".to_string()));
+            let _ = tx.send(result);
+        });
+        rx.await
+            .map_err(|_| Error::Endpoint("xslt module task was dropped".to_string()))?
+            .map_err(Error::Endpoint)
+    }
+
+    /// The `urn:xslt:transform` space, module-backed.
+    pub fn space() -> ikigai_core::EndpointSpace {
+        ikigai_core::EndpointSpace::new().bind(Exact::new("urn:xslt:transform"), XsltModuleEndpoint)
+    }
+}
+
+/// The `urn:xslt:*` space: a dynamically-loaded module on wasm (xrust kept out of the
+/// host wasm, lazy-fetched), linked directly on native (the server can't lazy-load wasm).
+#[cfg(target_family = "wasm")]
+fn xslt_space() -> Arc<dyn Space> {
+    Arc::new(xslt_module::space())
+}
+#[cfg(not(target_family = "wasm"))]
+fn xslt_space() -> Arc<dyn Space> {
+    Arc::new(ikigai_xslt::space())
+}
+
 /// Build the in-page kernel with the host `nature` reported by `urn:host:info`:
 /// the demo endpoints, `compose`, and the page shapes, behind the JSON-or-Turtle
 /// meta renderer. One kernel drives both the composed page and the terminal, so
@@ -291,10 +527,61 @@ pub fn build_kernel(nature: &'static str) -> Kernel {
         .bind(Exact::new("urn:demo:greeter"), Greeter)
         .bind(
             Exact::new("urn:demo:web-cli"),
-            shape("web-cli", WEB_CLI_HTML),
+            shape(
+                "web-cli",
+                "In-page terminal",
+                "Mounts the CLI Engine on this page's kernel — the same REPL, in the browser.",
+                WEB_CLI_HTML,
+            ),
         )
-        .bind(Exact::new("urn:data:page"), shape("page", PAGE_HTML))
-        .bind(Exact::new("urn:data:about"), shape("about", ABOUT_HTML))
+        .bind(
+            Exact::new("urn:data:page"),
+            shape(
+                "page",
+                "Home page",
+                "The composed demo page — one resource, assembled from $a{} markers in WebAssembly.",
+                PAGE_HTML,
+            ),
+        )
+        .bind(
+            Exact::new("urn:data:docs"),
+            shape(
+                "docs",
+                "Catalog page",
+                "The kernel's catalog, transrepted to RDF/XML and styled into endpoint cards by an XSLT.",
+                DOCS_HTML,
+            ),
+        )
+        .bind(
+            Exact::new("urn:data:demo"),
+            shape(
+                "demo",
+                "Demo page",
+                "The guided runbook demos (urn:runbook:*) on their own page, reached from the toolbar.",
+                DEMO_HTML,
+            ),
+        )
+        .bind(
+            Exact::new("urn:data:about"),
+            shape(
+                "about",
+                "About box",
+                "A nested shape the page transcludes — proof that composition recurses.",
+                ABOUT_HTML,
+            ),
+        )
+        // The Catalog page's cards: a `src` resource (catalog → RDF/XML) and a
+        // `stylesheet` resource (the XSLT), both cacheable, transformed by urn:xslt:*.
+        .bind(Exact::new("urn:data:catalog.rdf"), CatalogRdf)
+        .bind(
+            Exact::new("urn:style:catalog-cards"),
+            shape(
+                "catalog-cards-xsl",
+                "Catalog cards stylesheet",
+                "The XSLT that styles the catalog RDF/XML into the endpoint cards on the Catalog page.",
+                CATALOG_CARDS_XSL,
+            ),
+        )
         .bind(Exact::new("urn:host:info"), host_info(nature))
         .bind(Exact::new("urn:host:identity"), host_identity())
         .bind(Exact::new("urn:runbook:identity"), runbook_identity())
@@ -318,6 +605,14 @@ pub fn build_kernel(nature: &'static str) -> Kernel {
     let root: Arc<dyn Space> = Arc::new(Fallback::new(vec![
         Arc::new(space) as Arc<dyn Space>,
         Arc::new(ikigai_http::space(Arc::new(BrowserFetchTransport))) as Arc<dyn Space>,
+        // RDF transreption (`urn:rdf:transrept`) — parses RDF and re-serializes to another
+        // syntax (or an HTML table), client-side. The Catalog page and the Linked Data tab
+        // pipe `urn:kernel:catalog` / a live FOAF fetch through it.
+        Arc::new(ikigai_rdf::space()) as Arc<dyn Space>,
+        // XSLT (`urn:xslt:transform`) — styles RDF/XML (the catalog) into HTML cards.
+        // On wasm it's a dynamically-loaded module (xrust lazy-fetched, not in the host
+        // wasm); on native it's linked directly. See `xslt_space()`.
+        xslt_space(),
         // The interactive runbook (`urn:runbook:*`) — the same module the native CLI
         // links, rendered here as htmx (HATEOAS) HTML.
         Arc::new(ikigai_runbook::space()) as Arc<dyn Space>,
@@ -537,6 +832,26 @@ pub fn eval_line_async(line: String) -> js_sys::Promise {
     let engine = ENGINE.with(Rc::clone);
     wasm_bindgen_futures::future_to_promise(async move {
         Ok(JsValue::from_str(&eval_to_json(engine.eval_async(&line).await)))
+    })
+}
+
+/// The host's resolver for a dynamically-loaded **module's callbacks**: resolve a single
+/// resource IRI and return its text. The by-reference XSLT module calls this back across
+/// the wasm boundary to fetch its `src`/`stylesheet` from this kernel — *while* the
+/// original `urn:xslt:transform` is in flight. That re-entrancy is safe: `eval_async`
+/// clones the session capability rather than holding a borrow across the await, and the
+/// outer request is parked (no kernel lock held) while this inner one resolves.
+#[wasm_bindgen(js_name = hostResolve)]
+pub fn host_resolve(uri: String) -> js_sys::Promise {
+    let engine = ENGINE.with(Rc::clone);
+    wasm_bindgen_futures::future_to_promise(async move {
+        match engine.eval_async(&format!("source {uri}")).await {
+            ikigai_engine::Action::Output(entry) => entry
+                .result
+                .map(|text| JsValue::from_str(&text))
+                .map_err(|e| JsValue::from_str(&e)),
+            _ => Err(JsValue::from_str(&format!("host_resolve: could not resolve `{uri}`"))),
+        }
     })
 }
 
