@@ -11,7 +11,7 @@ async function load() {
   if (!_mod) {
     // Coalesce concurrent first-hits onto one instantiation.
     _loading = _loading || (async () => {
-      const m = await import('./ikigai_xslt_module.js');
+      const m = await import('./ikigai_xslt.js');
       await m.default(); // instantiate the module's wasm
       _mod = m;
     })();

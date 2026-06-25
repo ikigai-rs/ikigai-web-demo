@@ -35,10 +35,10 @@ ikigai-resolve = "0.1.6"  # is_cached carries &Capability
 # browser, and the server speaks it on the other end. Same bytes as ikigai-ipc/quic.
 # Also reused for the module-session codec (encode/decode of ModuleCall/ModuleReply).
 ikigai-wire = "0.1"
-# The dynamically-loadable module format: ModuleCall/ModuleReply (the session protocol the
-# lazy XSLT module speaks across the wasm boundary). The module itself runs the session via
-# ikigai-module::run_session in its own wasm; here the host just speaks the protocol.
-ikigai-module = "0.1.5"
+# The dynamically-loadable module format. The host mounts the lazy XSLT module as a generic
+# WasmModuleSpace and services its HostCalls with serve_host_call; the session protocol + the
+# provenance sink live in the crate (the module runs run_session in its own wasm).
+ikigai-module = "0.1.6"
 # Outbound HTTP-client module (urn:httpGet…). Already async + executor-agnostic
 # (HttpTransport seam), so the browser supplies a `fetch`-backed transport — same
 # module the native CLI drives with ureq. Unchanged for M2, so straight from crates.io.

@@ -43,18 +43,19 @@ jobs:
           wasm-bindgen --target web --out-dir dist \
             target/wasm32-unknown-unknown/release/ikigai_web_demo.wasm
 
-      # Build the lazy-loaded XSLT module wasm from its own repo (ikigai-xslt-module) and
-      # emit its JS bindings into dist/. It lives in a separate crate so xrust never enters
-      # the host's wasm; the host imports it lazily through the committed dist/xslt-loader.js
-      # glue. Only this module's generated .js/.wasm are CI-built — the loader is hand-
-      # written and committed. Uses the same wasm32 toolchain + wasm-bindgen-cli@0.2.108
-      # installed above.
+      # Build the lazy-loaded XSLT module wasm from the ikigai-xslt repo itself, with its
+      # `module` feature (which emits the module glue via ikigai_module::wasm_module!) — so
+      # xrust never enters the host's wasm; the host imports it lazily through the committed
+      # dist/xslt-loader.js glue. Only the generated .js/.wasm are CI-built. Uses the same
+      # wasm32 toolchain + wasm-bindgen-cli@0.2.108 installed above. (ikigai-xslt is its own
+      # module now — there is no separate ikigai-xslt-module crate.)
       - name: Build XSLT module WASM + JS bindings into dist/
         run: |
-          git clone --depth 1 https://github.com/ikigai-rs/ikigai-xslt-module.git module-src
-          cargo build --release --manifest-path module-src/Cargo.toml --target wasm32-unknown-unknown
+          git clone --depth 1 https://github.com/ikigai-rs/ikigai-xslt.git module-src
+          cargo build --release --lib --features module \
+            --manifest-path module-src/Cargo.toml --target wasm32-unknown-unknown
           wasm-bindgen --target web --out-dir dist \
-            module-src/target/wasm32-unknown-unknown/release/ikigai_xslt_module.wasm
+            module-src/target/wasm32-unknown-unknown/release/ikigai_xslt.wasm
 
       - uses: actions/upload-pages-artifact@v3
         with:

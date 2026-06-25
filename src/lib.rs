@@ -401,202 +401,75 @@ impl Endpoint for CatalogRdf {
     }
 }
 
-/// The XSLT module as a **dynamically-loaded** wasm artifact (Phase 2, by-value). On
-/// wasm the host doesn't link xrust at all: it resolves the `src`/`stylesheet` resource
-/// references itself, then hands the bytes to `ikigai-xslt-module` — a separate ~2.4 MB
-/// wasm fetched + instantiated only on first use (see `dist/xslt-loader.js`). The native
-/// server keeps xslt linked (no lazy-load machinery there), the same split as CLI-links /
-/// browser-loads.
+/// The XSLT module as a **dynamically-loaded** wasm artifact. On wasm the host doesn't link
+/// xrust at all: `urn:xslt:*` routes to a generic [`WasmModuleSpace`](ikigai_module) over a
+/// browser transport, which lazy-loads `ikigai_xslt.wasm` (xrust, ~2.4 MB, fetched on first
+/// use) and drives the real `ModuleCall`/`ModuleReply` session. The module pulls its
+/// `src`/`stylesheet` back as `HostCall`s, which the host's `hostCall` export services with
+/// [`serve_host_call`](ikigai_module) — provenance and all. The native server keeps xslt
+/// linked (no lazy-load machinery there), the same split as CLI-links / browser-loads.
 #[cfg(target_family = "wasm")]
 mod xslt_module {
     use super::*;
-    use ikigai_core::{Expiry, Thread};
-    use ikigai_module::{ModuleCall, ModuleReply};
-    use ikigai_wire::{decode, encode};
-    use std::cell::{Cell, RefCell};
-    use std::collections::BTreeSet;
+    use ikigai_core::ArgSpec;
+    use ikigai_module::{ModuleSessionTransport, WasmModuleSpace};
 
-    // The host hands the lazy-loaded module an encoded `ModuleCall::Invoke` via a global
-    // `xsltInvokeSession` (index.html wires it to the loader; the heavy module wasm loads
-    // inside it on first call). The module runs the real `ModuleCall`/`ModuleReply` session
-    // (ikigai-module::run_session) and pumps each `inv.source` back as a `HostCall` to the
-    // host's `hostCall` global — see `dist/xslt-loader.js` and `host_call` below.
+    // The lazy module's session entry, a global the loader wires to `invoke_session` on the
+    // module wasm (index.html → dist/xslt-loader.js). The heavy module wasm loads inside it
+    // on first call.
     #[wasm_bindgen]
     extern "C" {
         #[wasm_bindgen(catch, js_name = "xsltInvokeSession")]
         async fn xslt_invoke_session(invoke: Vec<u8>) -> std::result::Result<JsValue, JsValue>;
     }
 
-    // --- Dependency propagation across the module boundary ------------------------------
-    //
-    // `ikigai-module`'s in-process `HostBridge` records a module's `inv.source` callbacks
-    // onto the *outer* invocation, so the host kernel folds their golden threads + expiry
-    // into the result (the transform is no more cacheable than its `src`/`stylesheet`, and
-    // cutting either invalidates it). Over the wasm boundary the module's `Resolved` reply
-    // drops its threads (`serde(skip)`), and the host services the callbacks out-of-band in
-    // `host_call` — so we capture provenance there: each in-flight transform installs a
-    // `DepSink`; `host_call` records every resource it resolves into the active sinks; the
-    // transform folds the union into its result (`depends_on` + `with_expiry`), which the
-    // kernel then caches.
-
-    /// The cache provenance accumulated from one transform's `host_call` callbacks.
-    pub(crate) struct DepSink {
-        threads: BTreeSet<Thread>,
-        expiry: Expiry,
-    }
-
-    impl DepSink {
-        fn new() -> Self {
-            // Start maximally cacheable; each resolved dependency can only tighten this.
-            Self { threads: BTreeSet::new(), expiry: Expiry::Never }
-        }
-
-        fn record(&mut self, repr: &Representation) {
-            self.expiry = self.expiry.most_restrictive(repr.expiry);
-            self.threads.extend(repr.threads().iter().cloned());
-        }
-    }
-
-    thread_local! {
-        // The sinks of all transforms currently in flight on this (single) thread, keyed by
-        // a plain id so a transform's `invoke` future holds only the `u64` across its await
-        // (not an `Rc`, which would make the future `!Send`). A `hostResolve` call records
-        // into every active sink; nesting/interleaving just over-approximates dependencies
-        // (safe — at worst a transform recomputes when an unrelated sibling's source
-        // changes), which the catalog's one-at-a-time use avoids anyway.
-        static DEP_SINKS: RefCell<Vec<(u64, RefCell<DepSink>)>> = const { RefCell::new(Vec::new()) };
-        static NEXT_SINK_ID: Cell<u64> = const { Cell::new(0) };
-    }
-
-    /// Install a fresh dependency sink for one transform; returns its id (pass it to
-    /// [`take_sink`] after the transform to read + remove it).
-    fn install_sink() -> u64 {
-        let id = NEXT_SINK_ID.with(|c| {
-            let id = c.get();
-            c.set(id.wrapping_add(1));
-            id
-        });
-        DEP_SINKS.with(|s| s.borrow_mut().push((id, RefCell::new(DepSink::new()))));
-        id
-    }
-
-    /// Remove the sink for `id` and return the cache provenance it accumulated.
-    fn take_sink(id: u64) -> DepSink {
-        DEP_SINKS.with(|s| {
-            let mut sinks = s.borrow_mut();
-            match sinks.iter().position(|(sid, _)| *sid == id) {
-                Some(pos) => sinks.remove(pos).1.into_inner(),
-                None => DepSink::new(),
-            }
-        })
-    }
-
-    /// Record a resource resolved during a module callback into every in-flight transform's
-    /// sink. Called by the host's `host_call` export.
-    pub(crate) fn record_resolved(repr: &Representation) {
-        DEP_SINKS.with(|sinks| {
-            for (_, sink) in sinks.borrow().iter() {
-                sink.borrow_mut().record(repr);
-            }
-        });
-    }
-
-    struct XsltModuleEndpoint;
+    /// The browser transport for the lazy XSLT module: ferry the encoded session bytes to
+    /// the global `xsltInvokeSession` and back. `JsValue` is `!Send`, so confine the call to
+    /// a `spawn_local` task and bridge the (`Send`) bytes back through a oneshot — exactly
+    /// like `BrowserFetchTransport`. (The module's `hostCall` callbacks run on the event loop
+    /// while this awaits.) Everything else — the session, the provenance sink — is generic in
+    /// `ikigai-module`.
+    struct BrowserXsltTransport;
 
     #[async_trait]
-    impl Endpoint for XsltModuleEndpoint {
-        async fn invoke(&self, inv: &Invocation<'_>) -> Result<Representation> {
-            // Hand the whole request + capability to the module as a `ModuleCall::Invoke`;
-            // the module resolves `urn:xslt:transform` in its OWN space and pulls the
-            // `src`/`stylesheet` back via `host_call` (the real session protocol — the same
-            // ModuleCall/ModuleReply the native loopback and UDS transports speak).
-            let invoke = encode(&ModuleCall::Invoke {
-                request: inv.request.clone(),
-                capability: inv.capability.clone(),
-            })
-            .map_err(|e| Error::Endpoint(format!("encode Invoke: {e}")))?;
-
-            // Install a sink so each `host_call` records what it resolved; after the session,
-            // fold that provenance into the result so the kernel caches the transform as
-            // depending on its `src`/`stylesheet`. Only the `u64` id crosses the await (the
-            // endpoint future stays `Send`); take the sink before `?` so it's cleaned up even
-            // if the session failed.
-            let sink_id = install_sink();
-            let result = call_module(invoke).await;
-            let collected = take_sink(sink_id);
-            let reply_bytes = result?;
-
-            match decode::<ModuleReply>(&reply_bytes)
-                .map_err(|e| Error::Endpoint(format!("decode ModuleReply: {e}")))?
-            {
-                ModuleReply::Resolved(repr) => {
-                    // The module's `Resolved` carries the transformed bytes + media type +
-                    // expiry, but its threads dropped on the wire (`serde(skip)`); re-attach
-                    // the provenance `host_call` captured, no more cacheable than its inputs.
-                    let expiry = repr.expiry.most_restrictive(collected.expiry);
-                    let mut repr = repr.with_expiry(expiry);
-                    for thread in collected.threads {
-                        repr = repr.depends_on(thread);
-                    }
-                    Ok(repr)
-                }
-                ModuleReply::Error(message) => Err(Error::Endpoint(message)),
-                _ => Err(Error::Endpoint(
-                    "xslt module returned an unexpected reply to Invoke".to_string(),
-                )),
-            }
-        }
-
-        fn name(&self) -> &str {
-            "xslt-transform"
-        }
-
-        fn describe(&self) -> Description {
-            use ikigai_core::ArgSpec;
-            Description::new("xslt-transform")
-                .title("XSLT transform")
-                .summary(
-                    "Apply an XSLT stylesheet to a source document, both as cacheable resource \
-                     references. Runs in a dynamically-loaded wasm module (xrust), fetched on \
-                     first use.",
-                )
-                .verb(Verb::Source)
-                .verb(Verb::Meta)
-                .input(ArgSpec::new("src").summary("the source XML/RDF-XML resource IRI"))
-                .input(ArgSpec::new("stylesheet").summary("the XSLT stylesheet resource IRI"))
-                .input(ArgSpec::new("as").summary("output media type (default text/html)"))
-                .output("text/html;charset=utf-8")
-        }
-    }
-
-    /// Run the module session: hand it the encoded `Invoke` and get back the encoded
-    /// `ModuleReply`. `xslt_invoke_session` holds `JsValue` (`!Send`), so — exactly like
-    /// `BrowserFetchTransport` — confine it to a `spawn_local` task and bridge the (`Send`)
-    /// bytes back through a oneshot, keeping the endpoint future `Send` as the `Endpoint`
-    /// trait requires. The module's `hostCall` callbacks run on the event loop while this
-    /// task awaits.
-    async fn call_module(invoke: Vec<u8>) -> Result<Vec<u8>> {
-        let (tx, rx) = futures::channel::oneshot::channel();
-        wasm_bindgen_futures::spawn_local(async move {
-            let result = match xslt_invoke_session(invoke).await {
-                Ok(value) => js_sys::Uint8Array::new(&value).to_vec(),
-                Err(e) => {
-                    let _ = tx.send(Err(e
+    impl ModuleSessionTransport for BrowserXsltTransport {
+        async fn invoke_session(&self, invoke: Vec<u8>) -> std::result::Result<Vec<u8>, String> {
+            let (tx, rx) = futures::channel::oneshot::channel();
+            wasm_bindgen_futures::spawn_local(async move {
+                let result = match xslt_invoke_session(invoke).await {
+                    Ok(value) => Ok(js_sys::Uint8Array::new(&value).to_vec()),
+                    Err(e) => Err(e
                         .as_string()
-                        .unwrap_or_else(|| "xslt module session failed".to_string())));
-                    return;
-                }
-            };
-            let _ = tx.send(Ok(result));
-        });
-        rx.await
-            .map_err(|_| Error::Endpoint("xslt module task was dropped".to_string()))?
-            .map_err(Error::Endpoint)
+                        .unwrap_or_else(|| "xslt module session failed".to_string())),
+                };
+                let _ = tx.send(result);
+            });
+            rx.await
+                .map_err(|_| "xslt module task was dropped".to_string())?
+        }
     }
 
-    /// The `urn:xslt:transform` space, module-backed.
-    pub fn space() -> ikigai_core::EndpointSpace {
-        ikigai_core::EndpointSpace::new().bind(Exact::new("urn:xslt:transform"), XsltModuleEndpoint)
+    /// The module endpoint's catalog card — handed to [`WasmModuleSpace`] so the lazy module
+    /// shows a rich description without being instantiated.
+    fn describe() -> Description {
+        Description::new("xslt-transform")
+            .title("XSLT transform")
+            .summary(
+                "Apply an XSLT stylesheet to a source document, both as cacheable resource \
+                 references. Runs in a dynamically-loaded wasm module (xrust), fetched on \
+                 first use.",
+            )
+            .verb(Verb::Source)
+            .verb(Verb::Meta)
+            .input(ArgSpec::new("src").summary("the source XML/RDF-XML resource IRI"))
+            .input(ArgSpec::new("stylesheet").summary("the XSLT stylesheet resource IRI"))
+            .input(ArgSpec::new("as").summary("output media type (default text/html)"))
+            .output("text/html;charset=utf-8")
+    }
+
+    /// The `urn:xslt:*` space: a generic `WasmModuleSpace` over the browser transport.
+    pub fn space() -> WasmModuleSpace {
+        WasmModuleSpace::new(["urn:xslt:"], Arc::new(BrowserXsltTransport), describe())
     }
 }
 
@@ -960,45 +833,33 @@ pub fn eval_line_async(line: String) -> js_sys::Promise {
 /// is safe: the session capability is cloned (no borrow held across the await) and the outer
 /// request is parked (no kernel lock held) while this resolves.
 ///
-/// It resolves through the [`Resolver`](ikigai_resolve::Resolver) handle so it gets the full
-/// `Representation` — its golden threads + expiry — and records them into the active
-/// transform's [`DepSink`](xslt_module) before they're dropped on the wire (`serde(skip)`),
-/// so the transform inherits its `src`/`stylesheet` dependencies (the browser realization of
-/// `ikigai-module`'s `HostBridge`).
+/// It resolves through the [`Resolver`](ikigai_resolve::Resolver) handle so the full
+/// `Representation` — its golden threads + expiry — reaches [`serve_host_call`], which
+/// records it against the in-flight transform's sink before the wire drops the threads
+/// (`serde(skip)`), so the transform inherits its `src`/`stylesheet` dependencies (the
+/// browser realization of `ikigai-module`'s `HostBridge`).
 ///
 /// wasm only: the module (and thus this callback) exists only in the browser; the native
 /// server links xslt directly.
 #[cfg(target_family = "wasm")]
 #[wasm_bindgen(js_name = hostCall)]
 pub fn host_call(reply: Vec<u8>) -> js_sys::Promise {
-    use ikigai_module::{ModuleCall, ModuleReply};
     use ikigai_resolve::Resolver;
-    use ikigai_wire::{decode, encode};
     let resolver = RESOLVER.with(|r| r.borrow().clone());
     wasm_bindgen_futures::future_to_promise(async move {
         let Some(resolver) = resolver else {
             return Err(JsValue::from_str("host_call: kernel resolver not initialised"));
         };
-        // Decode the module's HostCall, resolve it on the host kernel under the carried
-        // capability, and answer with the encoded HostResult (Ok or Err — either is a valid
-        // reply, so the module always gets a decodable answer).
-        let result = match decode::<ModuleReply>(&reply) {
-            Ok(ModuleReply::HostCall { request, capability }) => {
-                match resolver.issue_as_async(request, &capability).await {
-                    Ok((repr, _status)) => {
-                        // Capture provenance host-side before the wire drops the threads.
-                        xslt_module::record_resolved(&repr);
-                        Ok(repr)
-                    }
-                    Err(message) => Err(message),
-                }
-            }
-            Ok(_) => Err("host_call: expected a HostCall".to_string()),
-            Err(e) => Err(format!("host_call: undecodable HostCall: {e}")),
-        };
-        let host_result = ModuleCall::HostResult(result);
-        let bytes = encode(&host_result)
-            .map_err(|e| JsValue::from_str(&format!("host_call: encode HostResult: {e}")))?;
+        // The whole session protocol — decode the HostCall, record provenance, encode the
+        // HostResult — lives in ikigai-module; the host only supplies how to resolve a
+        // sub-request on its kernel (under the carried capability).
+        let bytes = ikigai_module::serve_host_call(&reply, move |request, capability| async move {
+            resolver
+                .issue_as_async(request, &capability)
+                .await
+                .map(|(representation, _status)| representation)
+        })
+        .await;
         Ok(js_sys::Uint8Array::from(&bytes[..]).into())
     })
 }
