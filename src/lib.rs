@@ -410,6 +410,9 @@ impl Endpoint for CatalogRdf {
 #[cfg(target_family = "wasm")]
 mod xslt_module {
     use super::*;
+    use ikigai_core::{Expiry, Thread};
+    use std::cell::{Cell, RefCell};
+    use std::collections::BTreeSet;
 
     // The host calls a global `xsltTransformRefs` that index.html wires to the lazy
     // loader; the heavy module wasm loads inside it on first call. By reference: the host
@@ -423,6 +426,79 @@ mod xslt_module {
             style_uri: &str,
             text: bool,
         ) -> std::result::Result<JsValue, JsValue>;
+    }
+
+    // --- Dependency propagation across the module boundary ------------------------------
+    //
+    // `ikigai-module`'s in-process `HostBridge` records a module's `inv.source` callbacks
+    // onto the *outer* invocation, so the host kernel folds their golden threads + expiry
+    // into the result (the transform is no more cacheable than its `src`/`stylesheet`, and
+    // cutting either invalidates it). The browser callback (`hostResolve`) crosses a wasm
+    // boundary as a free global and can't reach the outer `inv`, so we do the equivalent by
+    // collection: each in-flight transform installs a `DepSink`; `hostResolve` records every
+    // resource it resolves into the active sinks; the transform folds the union into its own
+    // result's provenance (`depends_on` + `with_expiry`), which the kernel then caches.
+
+    /// The cache provenance accumulated from one transform's `hostResolve` callbacks.
+    pub(crate) struct DepSink {
+        threads: BTreeSet<Thread>,
+        expiry: Expiry,
+    }
+
+    impl DepSink {
+        fn new() -> Self {
+            // Start maximally cacheable; each resolved dependency can only tighten this.
+            Self { threads: BTreeSet::new(), expiry: Expiry::Never }
+        }
+
+        fn record(&mut self, repr: &Representation) {
+            self.expiry = self.expiry.most_restrictive(repr.expiry);
+            self.threads.extend(repr.threads().iter().cloned());
+        }
+    }
+
+    thread_local! {
+        // The sinks of all transforms currently in flight on this (single) thread, keyed by
+        // a plain id so a transform's `invoke` future holds only the `u64` across its await
+        // (not an `Rc`, which would make the future `!Send`). A `hostResolve` call records
+        // into every active sink; nesting/interleaving just over-approximates dependencies
+        // (safe — at worst a transform recomputes when an unrelated sibling's source
+        // changes), which the catalog's one-at-a-time use avoids anyway.
+        static DEP_SINKS: RefCell<Vec<(u64, RefCell<DepSink>)>> = const { RefCell::new(Vec::new()) };
+        static NEXT_SINK_ID: Cell<u64> = const { Cell::new(0) };
+    }
+
+    /// Install a fresh dependency sink for one transform; returns its id (pass it to
+    /// [`take_sink`] after the transform to read + remove it).
+    fn install_sink() -> u64 {
+        let id = NEXT_SINK_ID.with(|c| {
+            let id = c.get();
+            c.set(id.wrapping_add(1));
+            id
+        });
+        DEP_SINKS.with(|s| s.borrow_mut().push((id, RefCell::new(DepSink::new()))));
+        id
+    }
+
+    /// Remove the sink for `id` and return the cache provenance it accumulated.
+    fn take_sink(id: u64) -> DepSink {
+        DEP_SINKS.with(|s| {
+            let mut sinks = s.borrow_mut();
+            match sinks.iter().position(|(sid, _)| *sid == id) {
+                Some(pos) => sinks.remove(pos).1.into_inner(),
+                None => DepSink::new(),
+            }
+        })
+    }
+
+    /// Record a resource resolved during a module callback into every in-flight transform's
+    /// sink. Called by the host's `hostResolve` export.
+    pub(crate) fn record_resolved(repr: &Representation) {
+        DEP_SINKS.with(|sinks| {
+            for (_, sink) in sinks.borrow().iter() {
+                sink.borrow_mut().record(repr);
+            }
+        });
     }
 
     struct XsltModuleEndpoint;
@@ -445,12 +521,28 @@ mod xslt_module {
             let media = inv.inline_str("as").unwrap_or("text/html").to_string();
             let text = media.split(';').next().unwrap_or(&media).trim() == "text/plain";
 
-            let html = call_module(src_uri, style_uri, text).await?;
-            Ok(Representation::new(
+            // Install a sink so the module's `hostResolve` callbacks record what they pull;
+            // after the transform, fold that provenance into the result so the kernel caches
+            // the transform as depending on its `src`/`stylesheet` (golden-thread propagation
+            // across the wasm module boundary). Only the `u64` id crosses the await, so the
+            // endpoint future stays `Send`; take the sink before `?` so it's cleaned up even
+            // if the transform failed.
+            let sink_id = install_sink();
+            let result = call_module(src_uri, style_uri, text).await;
+            let collected = take_sink(sink_id);
+            let html = result?;
+
+            let mut repr = Representation::new(
                 ReprType::new(media).with_param("charset", "utf-8"),
                 html.into_bytes(),
             )
-            .cacheable())
+            // No more cacheable than the resources the module resolved: `Never` when they're
+            // all permanently cacheable, tighter (a deadline / volatile) if any of them is.
+            .with_expiry(collected.expiry);
+            for thread in collected.threads {
+                repr = repr.depends_on(thread);
+            }
+            Ok(repr)
         }
 
         fn name(&self) -> &str {
@@ -742,6 +834,17 @@ async fn browser_fetch(
     Err("browser fetch is wasm-only".to_string())
 }
 
+// A `Resolver` handle to the *same* kernel the Engine drives, kept so the by-reference
+// XSLT module's `hostResolve` callbacks resolve to full `Representation`s (golden threads +
+// expiry), not just text — the host folds those into the transform's cache provenance so a
+// change to the module's `src`/`stylesheet` invalidates the cached transform. (wasm only:
+// the native server links xslt directly and never calls `hostResolve`.)
+#[cfg(target_family = "wasm")]
+thread_local! {
+    static RESOLVER: std::cell::RefCell<Option<Arc<dyn ikigai_resolve::Resolver>>> =
+        std::cell::RefCell::new(None);
+}
+
 thread_local! {
     // `Rc` so an async eval (`evalLineAsync`) can clone a handle and own it across
     // `.await` points — a `LocalKey::with` borrow can't span an await. Sync callers
@@ -756,6 +859,12 @@ thread_local! {
         let kernel = build_kernel("Embedded (Browser)").into_scheduled(Arc::new(WasmSpawner));
         #[cfg(not(target_family = "wasm"))]
         let kernel = Arc::new(build_kernel("Embedded (Browser)"));
+        // Stash a Resolver handle to the same kernel for the module callback path before
+        // the Engine takes ownership (see `RESOLVER` above and `host_resolve`).
+        #[cfg(target_family = "wasm")]
+        RESOLVER.with(|r| {
+            *r.borrow_mut() = Some(kernel.clone() as Arc<dyn ikigai_resolve::Resolver>);
+        });
         let engine = ikigai_engine::Engine::new(kernel);
         #[cfg(target_family = "wasm")]
         let engine = engine.with_spawner(Arc::new(WasmSpawner));
@@ -836,21 +945,43 @@ pub fn eval_line_async(line: String) -> js_sys::Promise {
 }
 
 /// The host's resolver for a dynamically-loaded **module's callbacks**: resolve a single
-/// resource IRI and return its text. The by-reference XSLT module calls this back across
-/// the wasm boundary to fetch its `src`/`stylesheet` from this kernel — *while* the
-/// original `urn:xslt:transform` is in flight. That re-entrancy is safe: `eval_async`
-/// clones the session capability rather than holding a borrow across the await, and the
-/// outer request is parked (no kernel lock held) while this inner one resolves.
+/// resource IRI, record its cache provenance against any in-flight transform, and return
+/// its text. The by-reference XSLT module calls this back across the wasm boundary to fetch
+/// its `src`/`stylesheet` from this kernel — *while* the original `urn:xslt:transform` is in
+/// flight. That re-entrancy is safe: the session capability is cloned (no borrow held across
+/// the await) and the outer request is parked (no kernel lock held) while this resolves.
+///
+/// Unlike a plain `source`, this resolves through the [`Resolver`](ikigai_resolve::Resolver)
+/// handle so it gets the full `Representation` — its golden threads + expiry — and records
+/// them into the active transform's [`DepSink`](xslt_module), so the transform inherits its
+/// `src`/`stylesheet` dependencies (the browser analogue of `ikigai-module`'s `HostBridge`).
+///
+/// wasm only: the by-reference module (and thus this callback) exists only in the browser;
+/// the native server links xslt directly.
+#[cfg(target_family = "wasm")]
 #[wasm_bindgen(js_name = hostResolve)]
 pub fn host_resolve(uri: String) -> js_sys::Promise {
-    let engine = ENGINE.with(Rc::clone);
+    use ikigai_resolve::Resolver;
+    let resolver = RESOLVER.with(|r| r.borrow().clone());
+    let capability = ENGINE.with(|engine| engine.capability());
     wasm_bindgen_futures::future_to_promise(async move {
-        match engine.eval_async(&format!("source {uri}")).await {
-            ikigai_engine::Action::Output(entry) => entry
-                .result
-                .map(|text| JsValue::from_str(&text))
-                .map_err(|e| JsValue::from_str(&e)),
-            _ => Err(JsValue::from_str(&format!("host_resolve: could not resolve `{uri}`"))),
+        let Some(resolver) = resolver else {
+            return Err(JsValue::from_str("host_resolve: kernel resolver not initialised"));
+        };
+        let iri = Iri::parse(&uri)
+            .map_err(|e| JsValue::from_str(&format!("host_resolve: bad IRI `{uri}`: {e}")))?;
+        let request = Request::new(Verb::Source, iri);
+        match resolver.issue_as_async(request, &capability).await {
+            Ok((repr, _status)) => {
+                // Fold this dependency into any in-flight transform's provenance.
+                xslt_module::record_resolved(&repr);
+                String::from_utf8(repr.bytes)
+                    .map(|text| JsValue::from_str(&text))
+                    .map_err(|e| JsValue::from_str(&format!("host_resolve: `{uri}` not UTF-8: {e}")))
+            }
+            Err(e) => Err(JsValue::from_str(&format!(
+                "host_resolve: could not resolve `{uri}`: {e}"
+            ))),
         }
     })
 }
