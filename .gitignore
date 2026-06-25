@@ -2,14 +2,12 @@
 # .cargo/config.toml is committed — it carries the wasm getrandom backend flag the
 # (oxrdf-dependent) wasm build needs, including on CI.
 /dist-node
-# The host wasm + its JS bindings are CI-generated; the lazy XSLT module wasm + its
-# bindings + the loader are committed (the module is a separate crate, built locally
-# and updated rarely) and served alongside.
+# Both the host wasm and the lazy XSLT module wasm (+ their JS bindings) are now
+# CI-generated — the host from this repo, the module from the ikigai-xslt-module repo
+# (cloned + built in pages.yml). Only the hand-written xslt-loader.js glue is committed.
 /dist/*.js
 !/dist/xslt-loader.js
-!/dist/ikigai_xslt_module.js
 /dist/*.wasm
-!/dist/ikigai_xslt_module_bg.wasm
 /dist/*.d.ts
 Cargo.lock
 .DS_Store
