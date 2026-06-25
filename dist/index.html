@@ -97,15 +97,16 @@
 <main id="app">…</main>
 
 <script type="module">
-import init, { evalLineAsync, hostResolve } from './ikigai_web_demo.js';
+import init, { evalLineAsync, hostCall } from './ikigai_web_demo.js';
 // The dynamically-loaded XSLT module (urn:xslt:transform). The ~2.4 MB module wasm
 // (xrust) is fetched only on the first call — opening the Catalog page — not in the
-// host's initial load. By REFERENCE: the host passes the src/stylesheet IRIs and the
-// module resolves them itself by calling back to `hostResolve` (this kernel) — a
-// bidirectional channel between the two wasm instances.
-import { xslt_transform_refs } from './xslt-loader.js';
-window.hostResolve = (uri) => hostResolve(uri);
-window.xsltTransformRefs = (srcUri, styleUri, text) => xslt_transform_refs(srcUri, styleUri, text);
+// host's initial load. The two wasm instances speak the real module-session protocol:
+// the host hands the module an encoded `Invoke` (`xsltInvokeSession`), and the module
+// pumps each sub-resource it needs back as a `HostCall` to `hostCall` (this kernel),
+// which answers with a `HostResult` — a bidirectional byte channel between the instances.
+import { xsltInvokeSession } from './xslt-loader.js';
+window.hostCall = (replyBytes) => hostCall(replyBytes);
+window.xsltInvokeSession = (invokeBytes) => xsltInvokeSession(invokeBytes);
 
 // The live terminal: a custom element that self-wires when the composed HTML
 // (which contains <ikigai-cli>) is inserted. It drives the same Engine as the page.
