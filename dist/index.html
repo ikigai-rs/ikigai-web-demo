@@ -78,6 +78,13 @@
   .card-verbs { display: flex; gap: 4px; flex-wrap: wrap; }
   .verb { font: 11px system-ui, sans-serif; color: #2e7d32; background: #eef7ee; border-radius: 4px; padding: 1px 7px; }
   .card-out { font: 11px ui-monospace, Menlo, monospace; color: #888; }
+  /* Transreptor cards: a distinct kind badge + the from → to media-type matrix. */
+  .card-kind { font: 11px system-ui, sans-serif; color: #a85b00; background: #fdf1e0; border: 1px solid #f0d3a8; border-radius: 4px; padding: 1px 7px; white-space: nowrap; }
+  .card:has(.card-kind) { border-left: 3px solid #d98324; }
+  .card-conv { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; font-size: 11px; }
+  .conv-label { color: #a85b00; font: 600 10px system-ui, sans-serif; text-transform: uppercase; letter-spacing: .04em; }
+  .conv-type { font: 11px ui-monospace, Menlo, monospace; color: #6a4a22; background: #fdf6ec; border-radius: 4px; padding: 1px 6px; }
+  .conv-arrow { color: #d98324; font-weight: 600; margin: 0 2px; }
 
   /* Passkey identity — the sign-in/out affordance is rendered by urn:host:identity
      (composed into the top of the page); these styles dress it. */

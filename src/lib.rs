@@ -137,7 +137,7 @@ const CATALOG_CARDS_XSL: &str = r#"<xsl:stylesheet version="1.0"
   <xsl:template match="/">
     <div class="cards"><xsl:apply-templates select="//ik:Endpoint"/></div>
   </xsl:template>
-  <xsl:template match="ik:Endpoint">
+  <xsl:template match="ik:Endpoint | ik:Transreptor">
     <article class="card">
       <div class="card-head">
         <h3 class="card-title">
@@ -147,8 +147,18 @@ const CATALOG_CARDS_XSL: &str = r#"<xsl:stylesheet version="1.0"
           </xsl:choose>
         </h3>
         <code class="card-id"><xsl:value-of select="ik:id"/></code>
+        <xsl:if test="ik:transreptsTo"><span class="card-kind">transreptor</span></xsl:if>
       </div>
       <xsl:if test="ik:summary"><p class="card-summary"><xsl:value-of select="ik:summary"/></p></xsl:if>
+      <xsl:if test="ik:transreptsTo">
+        <div class="card-conv">
+          <span class="conv-label">from</span>
+          <xsl:for-each select="ik:transreptsFrom"><code class="conv-type"><xsl:value-of select="."/></code></xsl:for-each>
+          <span class="conv-arrow">&#8594;</span>
+          <span class="conv-label">to</span>
+          <xsl:for-each select="ik:transreptsTo"><code class="conv-type"><xsl:value-of select="."/></code></xsl:for-each>
+        </div>
+      </xsl:if>
       <xsl:if test="ik:verb or ik:output">
         <div class="card-meta">
           <span class="card-verbs"><xsl:for-each select="ik:verb"><span class="verb"><xsl:value-of select="."/></span></xsl:for-each></span>
@@ -474,6 +484,12 @@ mod xslt_module {
             .input(ArgSpec::new("stylesheet").summary("the XSLT stylesheet resource IRI"))
             .input(ArgSpec::new("as").summary("output media type (default text/html)"))
             .output("text/html;charset=utf-8")
+            // Mirror the module's own marking (ikigai-xslt): a parameterized
+            // ik:Transreptor — needs a `stylesheet`, so it's not auto-invocable.
+            .transreptor(
+                ["application/xml", "text/xml", "application/rdf+xml"],
+                ["text/html", "text/plain"],
+            )
     }
 
     /// The `urn:xslt:*` space: a generic `WasmModuleSpace` over the browser transport.
@@ -598,6 +614,11 @@ pub fn build_kernel(nature: &'static str) -> Kernel {
         // The interactive runbook (`urn:runbook:*`) — the same module the native CLI
         // links, rendered here as htmx (HATEOAS) HTML.
         Arc::new(ikigai_runbook::space()) as Arc<dyn Space>,
+        // The ikigai vocabulary as a resolvable resource: `source urn:ikigai:vocab`
+        // returns the `ns#` ontology Turtle (ik:Transreptor rdfs:subClassOf ik:Endpoint
+        // + the property defs) — the same bytes served externally at
+        // https://ikigai-rs.dev/ns. Lists in the catalog like any endpoint.
+        Arc::new(ikigai_vocab::space()) as Arc<dyn Space>,
     ]));
     Kernel::with_meta_renderer(root, Arc::new(JsonOrTurtle)).with_clock(Arc::new(BrowserClock))
 }
