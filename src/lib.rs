@@ -186,7 +186,12 @@ const WEB_CLI_HTML: &str = r#"<section class="cli-mount">
 /// A `text/html` shape endpoint returning a fixed body (which carries `$a{}` markers).
 /// The `title`/`summary` give it a real self-description, so it shows up as a proper
 /// card in `urn:kernel:catalog` (and in `list`/Meta) rather than a bare id.
-fn shape(name: &'static str, title: &'static str, summary: &'static str, html: &'static str) -> FnEndpoint {
+fn shape(
+    name: &'static str,
+    title: &'static str,
+    summary: &'static str,
+    html: &'static str,
+) -> FnEndpoint {
     FnEndpoint::new(name, move |_inv: &Invocation<'_>| {
         Ok(Representation::new(
             ReprType::new("text/html").with_param("charset", "utf-8"),
@@ -380,10 +385,12 @@ impl Endpoint for CatalogRdf {
             .await?;
         // Transrept the Turtle to RDF/XML through the kernel (composes the cache: this
         // resource is cacheable and invalidates with the catalog).
-        let transrept =
-            Request::new(Verb::Source, Iri::parse("urn:rdf:transrept").expect("valid iri"))
-                .with_arg("content", ArgRef::Inline(catalog.bytes))
-                .with_arg("as", ArgRef::Inline(b"application/rdf+xml".to_vec()));
+        let transrept = Request::new(
+            Verb::Source,
+            Iri::parse("urn:rdf:transrept").expect("valid iri"),
+        )
+        .with_arg("content", ArgRef::Inline(catalog.bytes))
+        .with_arg("as", ArgRef::Inline(b"application/rdf+xml".to_vec()));
         inv.issue(transrept).await
     }
 
@@ -394,7 +401,9 @@ impl Endpoint for CatalogRdf {
     fn describe(&self) -> Description {
         Description::new("catalog-rdf")
             .title("Catalog (RDF/XML)")
-            .summary("The kernel's catalog transrepted to RDF/XML — the src for the cards stylesheet.")
+            .summary(
+                "The kernel's catalog transrepted to RDF/XML — the src for the cards stylesheet.",
+            )
             .verb(Verb::Source)
             .verb(Verb::Meta)
             .output("application/rdf+xml")
@@ -671,19 +680,20 @@ async fn browser_fetch(
     // deliberately reports it only as an opaque `TypeError` (it won't say why a
     // cross-origin request failed). Translate that into the actual cause rather than
     // surfacing `TypeError: Load failed`.
-    let resp: web_sys::Response = wasm_bindgen_futures::JsFuture::from(window.fetch_with_request(&req))
-        .await
-        .map_err(|_| {
-            format!(
-                "the browser blocked this fetch. It can only reach an origin that \
+    let resp: web_sys::Response =
+        wasm_bindgen_futures::JsFuture::from(window.fetch_with_request(&req))
+            .await
+            .map_err(|_| {
+                format!(
+                    "the browser blocked this fetch. It can only reach an origin that \
                  returns CORS headers (Access-Control-Allow-Origin), and an https page \
                  cannot fetch http. `{}` likely does neither — the native CLI has no \
                  such limit. (A CORS-enabled https URL works, e.g. https://httpbin.org/uuid.)",
-                request.url
-            )
-        })?
-        .dyn_into()
-        .map_err(|_| "fetch did not return a Response".to_string())?;
+                    request.url
+                )
+            })?
+            .dyn_into()
+            .map_err(|_| "fetch did not return a Response".to_string())?;
 
     let status = resp.status();
     let mut headers = Vec::new();
@@ -788,7 +798,11 @@ fn install_storage_watcher() {
     let on_storage = wasm_bindgen::closure::Closure::<dyn Fn(web_sys::StorageEvent)>::new(
         |event: web_sys::StorageEvent| {
             // Keys are `ikigai:fs:ws/<path>`; the thread is `urn:file:<path>`.
-            if let Some(rel) = event.key().as_deref().and_then(|k| k.strip_prefix("ikigai:fs:ws/")) {
+            if let Some(rel) = event
+                .key()
+                .as_deref()
+                .and_then(|k| k.strip_prefix("ikigai:fs:ws/"))
+            {
                 let cut = format!("sink urn:kernel:cut urn:file:{rel}");
                 ENGINE.with(|engine| {
                     let _ = engine.eval(&cut);
@@ -821,7 +835,9 @@ pub fn eval(line: String) -> String {
 pub fn eval_line_async(line: String) -> js_sys::Promise {
     let engine = ENGINE.with(Rc::clone);
     wasm_bindgen_futures::future_to_promise(async move {
-        Ok(JsValue::from_str(&eval_to_json(engine.eval_async(&line).await)))
+        Ok(JsValue::from_str(&eval_to_json(
+            engine.eval_async(&line).await,
+        )))
     })
 }
 
@@ -848,7 +864,9 @@ pub fn host_call(reply: Vec<u8>) -> js_sys::Promise {
     let resolver = RESOLVER.with(|r| r.borrow().clone());
     wasm_bindgen_futures::future_to_promise(async move {
         let Some(resolver) = resolver else {
-            return Err(JsValue::from_str("host_call: kernel resolver not initialised"));
+            return Err(JsValue::from_str(
+                "host_call: kernel resolver not initialised",
+            ));
         };
         // The whole session protocol — decode the HostCall, record provenance, encode the
         // HostResult — lives in ikigai-module; the host only supplies how to resolve a
