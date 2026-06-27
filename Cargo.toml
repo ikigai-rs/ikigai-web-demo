@@ -51,6 +51,9 @@ ikigai-runbook = "0.1.3"  # host-extensible tab strip (add_tab)
 # in wasm. The catalog + FOAF render to HTML through this. (SPARQL deferred to a later
 # slice.) Unpublished during dev — supplied by the [patch.crates-io] below.
 ikigai-rdf = "0.1.0"
+# Content sniffing + sniff-and-dispatch (urn:sniff, urn:transrept:auto) — classify
+# opaque bytes and route them to the right transreptor, client-side.
+ikigai-sniff = "0.1.1"
 # oneshot channel: the browser fetch transport confines the !Send `fetch` to a
 # spawn_local task and bridges the (Send) result back, so `HttpTransport::send` stays
 # Send as the trait requires.

@@ -619,6 +619,11 @@ pub fn build_kernel(nature: &'static str) -> Kernel {
         // + the property defs) — the same bytes served externally at
         // https://ikigai-rs.dev/ns. Lists in the catalog like any endpoint.
         Arc::new(ikigai_vocab::space()) as Arc<dyn Space>,
+        // Content sniffing + sniff-and-dispatch: `urn:sniff` classifies opaque bytes,
+        // `urn:transrept:auto` sniffs then routes them to the matching transreptor — so a
+        // fetched graph the server mislabels `application/octet-stream` transrepts in the
+        // tab without the caller asserting its input type.
+        Arc::new(ikigai_sniff::space()) as Arc<dyn Space>,
     ]));
     Kernel::with_meta_renderer(root, Arc::new(JsonOrTurtle)).with_clock(Arc::new(BrowserClock))
 }
