@@ -112,8 +112,10 @@ import init, { evalLineAsync, hostCall } from './ikigai_web_demo.js';
 // pumps each sub-resource it needs back as a `HostCall` to `hostCall` (this kernel),
 // which answers with a `HostResult` — a bidirectional byte channel between the instances.
 import { xsltInvokeSession } from './xslt-loader.js';
+import { jsonldInvokeSession } from './jsonld-loader.js';
 window.hostCall = (replyBytes) => hostCall(replyBytes);
 window.xsltInvokeSession = (invokeBytes) => xsltInvokeSession(invokeBytes);
+window.jsonldInvokeSession = (invokeBytes) => jsonldInvokeSession(invokeBytes);
 
 // The live terminal: a custom element that self-wires when the composed HTML
 // (which contains <ikigai-cli>) is inserted. It drives the same Engine as the page.

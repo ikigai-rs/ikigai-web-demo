@@ -7,6 +7,7 @@
 # (cloned + built in pages.yml). Only the hand-written xslt-loader.js glue is committed.
 /dist/*.js
 !/dist/xslt-loader.js
+!/dist/jsonld-loader.js
 /dist/*.wasm
 /dist/*.d.ts
 Cargo.lock
