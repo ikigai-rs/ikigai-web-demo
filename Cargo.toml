@@ -29,7 +29,7 @@ ikigai-vocab = "0.1"
 # The CLI's renderer-agnostic Engine — drives the in-page terminal — and its Resolver
 # seam. 0.1.4 is the async API (eval_async / issue_as_async) that lets the in-page
 # terminal drive the kernel on the JS event loop (M2).
-ikigai-engine = "0.1.6"  # Engine::login/logout + login resources
+ikigai-engine = "0.1.7"  # pipe fills the sole required input (JSON-LD demo's content+base pipes)
 ikigai-resolve = "0.1.6"  # is_cached carries &Capability
 # The on-wire Call/Reply protocol — the WASM codec (network demo) speaks it in the
 # browser, and the server speaks it on the other end. Same bytes as ikigai-ipc/quic.
@@ -45,12 +45,7 @@ ikigai-module = "0.1.7"  # with_endpoint(): lazy modules enumerate into the cata
 ikigai-http = "0.1.1"
 # Interactive runbook module (urn:runbook:*) — same module the CLI links; local path
 # during dev, publish/git when stable (like engine/resolve).
-ikigai-runbook = "0.1.3"  # host-extensible tab strip (add_tab)
-# NOTE: holding at 0.1.3 — the JSON-LD demo tab (runbook 0.1.5) pipes into
-# urn:jsonld:expand/flatten/compact, which need the engine pipe-disambiguation fix
-# (fill the sole required input). That fix is on ikigai-cli main but unpublished; the
-# published ikigai-engine 0.1.6 still errors. Bump runbook + ikigai-engine together once
-# a fixed ikigai-engine is on crates.io, then the browser tab works like the CLI's.
+ikigai-runbook = "0.1.5"  # adds the JSON-LD demo tab (expand/flatten/compact)
 # RDF transreption module (urn:rdf:transrept) from the ikigai-linkeddata workspace —
 # parses an RDF syntax and re-serializes to another (or to an HTML table), client-side
 # in wasm. The catalog + FOAF render to HTML through this. (SPARQL deferred to a later
