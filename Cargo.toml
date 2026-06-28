@@ -46,6 +46,11 @@ ikigai-http = "0.1.1"
 # Interactive runbook module (urn:runbook:*) — same module the CLI links; local path
 # during dev, publish/git when stable (like engine/resolve).
 ikigai-runbook = "0.1.3"  # host-extensible tab strip (add_tab)
+# NOTE: holding at 0.1.3 — the JSON-LD demo tab (runbook 0.1.5) pipes into
+# urn:jsonld:expand/flatten/compact, which need the engine pipe-disambiguation fix
+# (fill the sole required input). That fix is on ikigai-cli main but unpublished; the
+# published ikigai-engine 0.1.6 still errors. Bump runbook + ikigai-engine together once
+# a fixed ikigai-engine is on crates.io, then the browser tab works like the CLI's.
 # RDF transreption module (urn:rdf:transrept) from the ikigai-linkeddata workspace —
 # parses an RDF syntax and re-serializes to another (or to an HTML table), client-side
 # in wasm. The catalog + FOAF render to HTML through this. (SPARQL deferred to a later
