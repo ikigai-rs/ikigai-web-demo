@@ -18,7 +18,7 @@ path = "src/bin/server.rs"
 # Published crates from crates.io (graduated off the sibling path deps once
 # ikigai-core/ikigai-vocab were published at 0.1.0). This demo is a standalone
 # proof, intentionally not part of either repo's CI.
-ikigai-core = "0.1.22"  # EndpointKind/Transreption (.transreptor) for the catalog cards
+ikigai-core = "0.1.30"  # urn:kernel:actions self-describes (Selection demo routes types=)
 # The reusable function library, linked in as a published module crate.
 # Compiled to wasm32 alongside this lib — the in-browser proof of module linkage.
 ikigai-fn = "0.1.0"
@@ -45,7 +45,7 @@ ikigai-module = "0.1.7"  # with_endpoint(): lazy modules enumerate into the cata
 ikigai-http = "0.1.1"
 # Interactive runbook module (urn:runbook:*) — same module the CLI links; local path
 # during dev, publish/git when stable (like engine/resolve).
-ikigai-runbook = "0.1.6"  # JSON-LD compact step uses context=urn:data:ik-context (a resource)
+ikigai-runbook = "0.1.7"  # Selection demo tab (typed urn:action:* + urn:kernel:actions)
 # RDF transreption module (urn:rdf:transrept) from the ikigai-linkeddata workspace —
 # parses an RDF syntax and re-serializes to another (or to an HTML table), client-side
 # in wasm. The catalog + FOAF render to HTML through this. (SPARQL deferred to a later
