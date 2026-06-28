@@ -493,8 +493,11 @@ mod xslt_module {
     }
 
     /// The `urn:xslt:*` space: a generic `WasmModuleSpace` over the browser transport.
+    /// `with_endpoint` declares the one concrete IRI so it lists in the catalog (the same
+    /// card the native `ikigai_xslt::space()` enumerates) without loading the module.
     pub fn space() -> WasmModuleSpace {
         WasmModuleSpace::new(["urn:xslt:"], Arc::new(BrowserXsltTransport), describe())
+            .with_endpoint("urn:xslt:transform", describe())
     }
 }
 
@@ -547,9 +550,8 @@ mod jsonld_module {
         }
     }
 
-    /// A representative catalog card for the module's `urn:jsonld:*` prefix (the three ops
-    /// resolve through it; expand/flatten take `content`, compact also a `context`). Shown
-    /// without instantiating the module.
+    /// A representative catalog card for the module's `urn:jsonld:*` prefix — the fallback
+    /// for any prefix-matched IRI not declared below. Shown without instantiating the module.
     fn describe() -> Description {
         Description::new("jsonld")
             .title("JSON-LD operators")
@@ -560,24 +562,78 @@ mod jsonld_module {
             )
             .verb(Verb::Source)
             .verb(Verb::Meta)
-            .input(ArgSpec::new("content").summary("the JSON-LD document — usually piped in"))
+            .input(content_input())
+            .output("application/ld+json")
+    }
+
+    fn content_input() -> ArgSpec {
+        ArgSpec::new("content").summary("the JSON-LD document — usually piped in")
+    }
+    fn base_input() -> ArgSpec {
+        ArgSpec::new("base")
+            .summary("optional base IRI for relative references")
+            .optional()
+    }
+
+    // Per-op cards mirroring the native `ikigai-jsonld` crate, so the browser catalog lists
+    // the same three endpoints (expand / flatten / compact) as the CLI — declared host-side,
+    // enumerated and `Meta`-rendered without ever loading the wasm module.
+    fn expand_card() -> Description {
+        Description::new("jsonld-expand")
+            .title("JSON-LD expand")
+            .summary("Expand a JSON-LD document to its fully-explicit (no-context) form.")
+            .verb(Verb::Source)
+            .verb(Verb::Meta)
+            .input(content_input())
+            .input(base_input())
+            .output("application/ld+json")
+    }
+    fn flatten_card() -> Description {
+        Description::new("jsonld-flatten")
+            .title("JSON-LD flatten")
+            .summary("Flatten a JSON-LD document: every node moved to the top level.")
+            .verb(Verb::Source)
+            .verb(Verb::Meta)
+            .input(content_input())
+            .input(base_input())
+            .output("application/ld+json")
+    }
+    fn compact_card() -> Description {
+        Description::new("jsonld-compact")
+            .title("JSON-LD compact")
+            .summary(
+                "Compact a JSON-LD document against a supplied context — short terms, and the \
+                 basis of the trust-boundary egress filter.",
+            )
+            .verb(Verb::Source)
+            .verb(Verb::Meta)
+            .input(content_input())
+            .input(ArgSpec::new("context").summary("the JSON-LD context to compact against"))
+            .input(base_input())
             .output("application/ld+json")
     }
 
     pub fn space() -> WasmModuleSpace {
-        WasmModuleSpace::new(["urn:jsonld:"], Arc::new(BrowserJsonldTransport), describe())
+        WasmModuleSpace::new(
+            ["urn:jsonld:"],
+            Arc::new(BrowserJsonldTransport),
+            describe(),
+        )
+        .with_endpoint("urn:jsonld:expand", expand_card())
+        .with_endpoint("urn:jsonld:flatten", flatten_card())
+        .with_endpoint("urn:jsonld:compact", compact_card())
     }
 }
 
-/// The `urn:jsonld:*` space: a lazy wasm module in the browser. On native it's omitted for
-/// now (ikigai-jsonld isn't published yet); link `ikigai_jsonld::space()` here once it is.
+/// The `urn:jsonld:*` space: a lazy wasm module in the browser (the heavy `json-ld` tree
+/// kept out of the host wasm), linked directly on native (the server can't lazy-load wasm).
 #[cfg(target_family = "wasm")]
 fn jsonld_space() -> Arc<dyn Space> {
     Arc::new(jsonld_module::space())
 }
 #[cfg(not(target_family = "wasm"))]
 fn jsonld_space() -> Arc<dyn Space> {
-    Arc::new(EndpointSpace::new())
+    Arc::new(ikigai_jsonld::space())
 }
 
 /// Build the in-page kernel with the host `nature` reported by `urn:host:info`:
