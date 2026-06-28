@@ -38,7 +38,7 @@ ikigai-wire = "0.1"
 # The dynamically-loadable module format. The host mounts the lazy XSLT module as a generic
 # WasmModuleSpace and services its HostCalls with serve_host_call; the session protocol + the
 # provenance sink live in the crate (the module runs run_session in its own wasm).
-ikigai-module = "0.1.6"
+ikigai-module = "0.1.7"  # with_endpoint(): lazy modules enumerate into the catalog
 # Outbound HTTP-client module (urn:httpGet…). Already async + executor-agnostic
 # (HttpTransport seam), so the browser supplies a `fetch`-backed transport — same
 # module the native CLI drives with ureq. Unchanged for M2, so straight from crates.io.
@@ -73,6 +73,9 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util"] }
 # XSLT linked natively (the server can't lazy-load a wasm module). On wasm the host
 # instead lazy-loads `ikigai-xslt-module` (xrust kept OUT of the host wasm) — Phase 2.
 ikigai-xslt = "0.1.0"
+# JSON-LD operators linked natively (same reason as XSLT — no wasm lazy-load on the
+# server). On wasm the host lazy-loads the module instead (json-ld kept out of the host).
+ikigai-jsonld = "0.1.0"
 
 # wasm-only: the cross-tab `storage` event, used to cut golden threads when another
 # tab (or page JS) changes a workspace file — the browser's filesystem watcher.
