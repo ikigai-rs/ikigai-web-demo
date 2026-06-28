@@ -45,7 +45,7 @@ ikigai-module = "0.1.7"  # with_endpoint(): lazy modules enumerate into the cata
 ikigai-http = "0.1.1"
 # Interactive runbook module (urn:runbook:*) — same module the CLI links; local path
 # during dev, publish/git when stable (like engine/resolve).
-ikigai-runbook = "0.1.5"  # adds the JSON-LD demo tab (expand/flatten/compact)
+ikigai-runbook = "0.1.6"  # JSON-LD compact step uses context=urn:data:ik-context (a resource)
 # RDF transreption module (urn:rdf:transrept) from the ikigai-linkeddata workspace —
 # parses an RDF syntax and re-serializes to another (or to an HTML table), client-side
 # in wasm. The catalog + FOAF render to HTML through this. (SPARQL deferred to a later
@@ -75,7 +75,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util"] }
 ikigai-xslt = "0.1.0"
 # JSON-LD operators linked natively (same reason as XSLT — no wasm lazy-load on the
 # server). On wasm the host lazy-loads the module instead (json-ld kept out of the host).
-ikigai-jsonld = "0.1.0"
+ikigai-jsonld = "0.1.1"  # compact sources a context-by-reference
 
 # wasm-only: the cross-tab `storage` event, used to cut golden threads when another
 # tab (or page JS) changes a workspace file — the browser's filesystem watcher.
