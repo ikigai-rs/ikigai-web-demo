@@ -509,6 +509,77 @@ fn xslt_space() -> Arc<dyn Space> {
     Arc::new(ikigai_xslt::space())
 }
 
+/// The JSON-LD operator module (`urn:jsonld:*` — expand / compact / flatten), lazy-loaded as
+/// a wasm module like XSLT, so the heavy `json-ld` tree never enters the host wasm. Same
+/// `WasmModuleSpace` machinery as [`xslt_module`], over its own `jsonldInvokeSession` channel.
+#[cfg(target_family = "wasm")]
+mod jsonld_module {
+    use super::*;
+    use ikigai_core::ArgSpec;
+    use ikigai_module::{ModuleSessionTransport, WasmModuleSpace};
+
+    #[wasm_bindgen]
+    extern "C" {
+        #[wasm_bindgen(catch, js_name = "jsonldInvokeSession")]
+        async fn jsonld_invoke_session(invoke: Vec<u8>) -> std::result::Result<JsValue, JsValue>;
+    }
+
+    /// Browser transport for the lazy JSON-LD module — ferry the encoded session bytes to the
+    /// global `jsonldInvokeSession` and back, confining the `!Send` `JsValue` to a
+    /// `spawn_local` task and bridging the bytes through a oneshot.
+    struct BrowserJsonldTransport;
+
+    #[async_trait]
+    impl ModuleSessionTransport for BrowserJsonldTransport {
+        async fn invoke_session(&self, invoke: Vec<u8>) -> std::result::Result<Vec<u8>, String> {
+            let (tx, rx) = futures::channel::oneshot::channel();
+            wasm_bindgen_futures::spawn_local(async move {
+                let result = match jsonld_invoke_session(invoke).await {
+                    Ok(value) => Ok(js_sys::Uint8Array::new(&value).to_vec()),
+                    Err(e) => Err(e
+                        .as_string()
+                        .unwrap_or_else(|| "jsonld module session failed".to_string())),
+                };
+                let _ = tx.send(result);
+            });
+            rx.await
+                .map_err(|_| "jsonld module task was dropped".to_string())?
+        }
+    }
+
+    /// A representative catalog card for the module's `urn:jsonld:*` prefix (the three ops
+    /// resolve through it; expand/flatten take `content`, compact also a `context`). Shown
+    /// without instantiating the module.
+    fn describe() -> Description {
+        Description::new("jsonld")
+            .title("JSON-LD operators")
+            .summary(
+                "expand / compact / flatten a JSON-LD document (urn:jsonld:expand / :compact / \
+                 :flatten). Runs in a dynamically-loaded wasm module (the json-ld crate), \
+                 fetched on first use.",
+            )
+            .verb(Verb::Source)
+            .verb(Verb::Meta)
+            .input(ArgSpec::new("content").summary("the JSON-LD document — usually piped in"))
+            .output("application/ld+json")
+    }
+
+    pub fn space() -> WasmModuleSpace {
+        WasmModuleSpace::new(["urn:jsonld:"], Arc::new(BrowserJsonldTransport), describe())
+    }
+}
+
+/// The `urn:jsonld:*` space: a lazy wasm module in the browser. On native it's omitted for
+/// now (ikigai-jsonld isn't published yet); link `ikigai_jsonld::space()` here once it is.
+#[cfg(target_family = "wasm")]
+fn jsonld_space() -> Arc<dyn Space> {
+    Arc::new(jsonld_module::space())
+}
+#[cfg(not(target_family = "wasm"))]
+fn jsonld_space() -> Arc<dyn Space> {
+    Arc::new(EndpointSpace::new())
+}
+
 /// Build the in-page kernel with the host `nature` reported by `urn:host:info`:
 /// the demo endpoints, `compose`, and the page shapes, behind the JSON-or-Turtle
 /// meta renderer. One kernel drives both the composed page and the terminal, so
@@ -611,6 +682,9 @@ pub fn build_kernel(nature: &'static str) -> Kernel {
         // On wasm it's a dynamically-loaded module (xrust lazy-fetched, not in the host
         // wasm); on native it's linked directly. See `xslt_space()`.
         xslt_space(),
+        // JSON-LD operators (urn:jsonld:expand / :compact / :flatten) — lazy wasm module,
+        // like XSLT; the heavy json-ld tree stays out of the host wasm.
+        jsonld_space(),
         // The interactive runbook (`urn:runbook:*`) — the same module the native CLI
         // links, rendered here as htmx (HATEOAS) HTML.
         Arc::new(ikigai_runbook::space()) as Arc<dyn Space>,

@@ -57,6 +57,17 @@ jobs:
           wasm-bindgen --target web --out-dir dist \
             module-src/target/wasm32-unknown-unknown/release/ikigai_xslt.wasm
 
+      # The JSON-LD operator module (urn:jsonld:*), built from its own repo with the `module`
+      # feature, lazy-loaded via the committed dist/jsonld-loader.js — the heavy json-ld tree
+      # kept out of the host wasm, exactly like XSLT.
+      - name: Build JSON-LD module WASM + JS bindings into dist/
+        run: |
+          git clone --depth 1 https://github.com/ikigai-rs/ikigai-jsonld.git jsonld-src
+          cargo build --release --lib --features module \
+            --manifest-path jsonld-src/Cargo.toml --target wasm32-unknown-unknown
+          wasm-bindgen --target web --out-dir dist \
+            jsonld-src/target/wasm32-unknown-unknown/release/ikigai_jsonld.wasm
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
