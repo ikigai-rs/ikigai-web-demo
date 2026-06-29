@@ -12,7 +12,7 @@ function loadLibs () {
   if (!libsPromise) {
     // @zazuko/env is the RDF/JS environment that pairs with shacl-engine (both Zazuko); it
     // loads cleanly over the CDN where rdf-ext@2's multi-package default does not.
-    libsPromise = Promise.all([
+    const imports = Promise.all([
       import('https://esm.sh/@zazuko/env@2'),
       import('https://esm.sh/n3@2.1.0'),
       import('https://esm.sh/shacl-engine@1.1.1/Validator.js')
@@ -22,6 +22,18 @@ function loadLibs () {
       Writer: n3.Writer,
       Validator: validatorMod.default
     }))
+    // A hung CDN fetch shouldn't wedge SHACL forever — time out so it surfaces as a
+    // retryable error instead of an infinite pending promise.
+    let timer
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error('SHACL validator load timed out')), 20000)
+    })
+    libsPromise = Promise.race([imports, timeout]).finally(() => clearTimeout(timer))
+    // CRUCIAL: never cache a *failure*. If the first load fails/aborts (a CDN blip, or a
+    // fetch interrupted while the page is busy with other demos), clear the memo so the next
+    // validation RETRIES — rather than re-awaiting a permanently-rejected promise, which only
+    // a page reload could clear (the intermittent "SHACL stopped working until reload" bug).
+    libsPromise.catch(() => { libsPromise = undefined })
   }
   return libsPromise
 }
@@ -55,14 +67,23 @@ function reportTurtle (Writer, report) {
 // data + shapes Turtle → the report, rendered per `asType` (application/json → the portable
 // ValidationOutcome; else the report graph as Turtle). Returns a string.
 async function shaclValidate (dataTtl, shapesTtl, asType) {
-  const { rdf, Parser, Writer, Validator } = await loadLibs()
-  const parse = ttl => rdf.dataset(new Parser({ factory: rdf }).parse(ttl))
-  const report = await new Validator(parse(shapesTtl), { factory: rdf })
-    .validate({ dataset: parse(dataTtl) })
-  if ((asType || '').split(';')[0].trim() === 'application/json') {
-    return outcomeJson(report)
+  try {
+    const { rdf, Parser, Writer, Validator } = await loadLibs()
+    const parse = ttl => rdf.dataset(new Parser({ factory: rdf }).parse(ttl))
+    const report = await new Validator(parse(shapesTtl), { factory: rdf })
+      .validate({ dataset: parse(dataTtl) })
+    if ((asType || '').split(';')[0].trim() === 'application/json') {
+      return outcomeJson(report)
+    }
+    return reportTurtle(Writer, report)
+  } catch (e) {
+    // Reject with a STRING so the host endpoint reports the real cause (a JsValue Error's
+    // message is otherwise dropped to a generic "validation failed"), and log it for the
+    // console — so a recurrence is diagnosable, not a mystery.
+    const message = 'shacl-engine: ' + (e && e.message ? e.message : String(e))
+    console.error('[shacl-loader]', message, e)
+    throw message
   }
-  return reportTurtle(Writer, report)
 }
 
 window.shaclValidate = shaclValidate
