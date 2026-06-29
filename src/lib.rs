@@ -636,6 +636,139 @@ fn jsonld_space() -> Arc<dyn Space> {
     Arc::new(ikigai_jsonld::space())
 }
 
+/// Browser SHACL validation behind `urn:shacl:validate`. rudof's validator is native-only
+/// (wasm-gated), so in the browser the SAME resource is served by the pure-JS shacl-engine
+/// (`dist/shacl-loader.js`). The output is held to the same `ValidationOutcome` contract as
+/// the native ikigai-shacl crate — proven equal in its `js-parity` suite.
+#[cfg(target_family = "wasm")]
+mod shacl_module {
+    use super::*;
+    use ikigai_core::{ArgSpec, EndpointSpace};
+
+    #[wasm_bindgen]
+    extern "C" {
+        #[wasm_bindgen(catch, js_name = "shaclValidate")]
+        async fn shacl_validate(
+            data: String,
+            shapes: String,
+            as_type: String,
+        ) -> std::result::Result<JsValue, JsValue>;
+    }
+
+    /// Bridge the `!Send` JS validator call to a `Send` future (spawn_local + oneshot), like
+    /// the jsonld/xslt transports.
+    async fn validate_js(data: String, shapes: String, as_type: String) -> Result<String> {
+        let (tx, rx) = futures::channel::oneshot::channel();
+        wasm_bindgen_futures::spawn_local(async move {
+            let r = match shacl_validate(data, shapes, as_type).await {
+                Ok(v) => Ok(v.as_string().unwrap_or_default()),
+                Err(e) => Err(e
+                    .as_string()
+                    .unwrap_or_else(|| "shacl-engine validation failed".to_string())),
+            };
+            let _ = tx.send(r);
+        });
+        rx.await
+            .map_err(|_| Error::Endpoint("urn:shacl:validate: task dropped".to_string()))?
+            .map_err(Error::Endpoint)
+    }
+
+    fn is_inline_shapes(s: &str) -> bool {
+        let t = s.trim_start();
+        t.starts_with('@')
+            || t.starts_with('<')
+            || t.starts_with('#')
+            || t.starts_with("_:")
+            || t.chars().any(char::is_whitespace)
+    }
+
+    struct BrowserShacl;
+
+    #[async_trait]
+    impl Endpoint for BrowserShacl {
+        async fn invoke(&self, inv: &Invocation<'_>) -> Result<Representation> {
+            let data = inv
+                .inline_str("data")
+                .map_err(|_| {
+                    Error::Endpoint(
+                        "urn:shacl:validate needs a `data` RDF (Turtle) graph — usually piped in"
+                            .to_string(),
+                    )
+                })?
+                .to_string();
+            let shapes_arg = inv.inline_str("shapes").map_err(|_| {
+                Error::Endpoint(
+                    "urn:shacl:validate needs a `shapes` graph: inline Turtle or a resolvable \
+                     resource IRI"
+                        .to_string(),
+                )
+            })?;
+            let as_type = inv.inline_str("as").unwrap_or("text/turtle").to_string();
+            // shapes by-reference (sourced through the kernel) or inline Turtle.
+            let shapes_ttl = if is_inline_shapes(shapes_arg) {
+                shapes_arg.to_string()
+            } else {
+                let iri = Iri::parse(shapes_arg).map_err(|e| {
+                    Error::Endpoint(format!("urn:shacl:validate: bad shapes IRI `{shapes_arg}`: {e}"))
+                })?;
+                String::from_utf8(inv.source(&iri).await?.bytes).map_err(|e| {
+                    Error::Endpoint(format!("urn:shacl:validate: shapes not UTF-8: {e}"))
+                })?
+            };
+            let body = validate_js(data, shapes_ttl, as_type.clone()).await?;
+            let media = if as_type.split(';').next().unwrap_or("").trim() == "application/json" {
+                "application/json"
+            } else {
+                "text/turtle"
+            };
+            Ok(
+                Representation::new(ReprType::new(media).with_param("charset", "utf-8"), body.into_bytes())
+                    .cacheable(),
+            )
+        }
+
+        fn name(&self) -> &str {
+            "shacl-validate"
+        }
+
+        fn describe(&self) -> Description {
+            Description::new("shacl-validate")
+                .title("SHACL validate")
+                .summary(
+                    "Validate an RDF data graph against a SHACL shapes graph. The report is \
+                     itself a graph (text/turtle) — or application/json {conforms, results}.",
+                )
+                .verb(Verb::Source)
+                .verb(Verb::Meta)
+                .input(
+                    ArgSpec::new("data").summary("the RDF data graph to validate — usually piped in"),
+                )
+                .input(ArgSpec::new("shapes").summary(
+                    "the SHACL shapes graph: inline Turtle or a resolvable resource IRI",
+                ))
+                .input(ArgSpec::new("as").summary(
+                    "report representation: text/turtle (default, the report graph) or \
+                     application/json",
+                ))
+                .output("text/turtle;charset=utf-8")
+        }
+    }
+
+    pub fn space() -> EndpointSpace {
+        EndpointSpace::new().bind(Exact::new("urn:shacl:validate"), BrowserShacl)
+    }
+}
+
+/// The `urn:shacl:validate` space: shacl-engine (JS) in the browser, rudof linked natively.
+#[cfg(target_family = "wasm")]
+fn shacl_space() -> Arc<dyn Space> {
+    Arc::new(shacl_module::space())
+}
+#[cfg(not(target_family = "wasm"))]
+fn shacl_space() -> Arc<dyn Space> {
+    Arc::new(ikigai_shacl::space())
+}
+
 /// Build the in-page kernel with the host `nature` reported by `urn:host:info`:
 /// the demo endpoints, `compose`, and the page shapes, behind the JSON-or-Turtle
 /// meta renderer. One kernel drives both the composed page and the terminal, so
@@ -741,6 +874,9 @@ pub fn build_kernel(nature: &'static str) -> Kernel {
         // JSON-LD operators (urn:jsonld:expand / :compact / :flatten) — lazy wasm module,
         // like XSLT; the heavy json-ld tree stays out of the host wasm.
         jsonld_space(),
+        // SHACL validation (urn:shacl:validate) — the JS shacl-engine here (rudof's validator
+        // is native-only); same resource, same ValidationOutcome contract as the CLI.
+        shacl_space(),
         // The interactive runbook (`urn:runbook:*`) — the same module the native CLI
         // links, rendered here as htmx (HATEOAS) HTML.
         Arc::new(ikigai_runbook::space()) as Arc<dyn Space>,

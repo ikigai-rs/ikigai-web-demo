@@ -8,6 +8,7 @@
 /dist/*.js
 !/dist/xslt-loader.js
 !/dist/jsonld-loader.js
+!/dist/shacl-loader.js
 /dist/*.wasm
 /dist/*.d.ts
 Cargo.lock

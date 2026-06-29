@@ -113,6 +113,8 @@ import init, { evalLineAsync, hostCall } from './ikigai_web_demo.js?v=__BUILD__'
 // which answers with a `HostResult` — a bidirectional byte channel between the instances.
 import { xsltInvokeSession } from './xslt-loader.js';
 import { jsonldInvokeSession } from './jsonld-loader.js';
+// SHACL: self-registers window.shaclValidate; shacl-engine itself loads lazily on first use.
+import './shacl-loader.js';
 window.hostCall = (replyBytes) => hostCall(replyBytes);
 window.xsltInvokeSession = (invokeBytes) => xsltInvokeSession(invokeBytes);
 window.jsonldInvokeSession = (invokeBytes) => jsonldInvokeSession(invokeBytes);

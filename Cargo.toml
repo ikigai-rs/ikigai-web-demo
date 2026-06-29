@@ -76,6 +76,9 @@ ikigai-xslt = "0.1.0"
 # JSON-LD operators linked natively (same reason as XSLT — no wasm lazy-load on the
 # server). On wasm the host lazy-loads the module instead (json-ld kept out of the host).
 ikigai-jsonld = "0.1.1"  # compact sources a context-by-reference
+# SHACL validation linked natively (rudof; native-only). On wasm the browser serves
+# urn:shacl:validate via the JS shacl-engine (dist/shacl-loader.js) instead.
+ikigai-shacl = "0.1.0"
 
 # wasm-only: the cross-tab `storage` event, used to cut golden threads when another
 # tab (or page JS) changes a workspace file — the browser's filesystem watcher.
