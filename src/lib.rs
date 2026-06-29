@@ -755,7 +755,12 @@ pub fn build_kernel(nature: &'static str) -> Kernel {
         // tab without the caller asserting its input type.
         Arc::new(ikigai_sniff::space()) as Arc<dyn Space>,
     ]));
-    Kernel::with_meta_renderer(root, Arc::new(JsonOrTurtle)).with_clock(Arc::new(BrowserClock))
+    // Fold the runbook's RDFS alignment graph (foaf:Person ⊑ schema:Person) into the
+    // kernel's subclass closure, so type-aware action selection (urn:kernel:actions) reasons
+    // over the hierarchy — a foaf:Person entity satisfies a schema:Person action.
+    Kernel::with_meta_renderer(root, Arc::new(JsonOrTurtle))
+        .with_clock(Arc::new(BrowserClock))
+        .with_subclass_axioms(ikigai_rdf::subclass_axioms(ikigai_runbook::ALIGNMENT_TTL))
 }
 
 /// The browser's [`Spawner`](ikigai_core::Spawner): runs each fanned-out task on the
