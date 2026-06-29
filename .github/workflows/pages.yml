@@ -68,6 +68,13 @@ jobs:
           wasm-bindgen --target web --out-dir dist \
             jsonld-src/target/wasm32-unknown-unknown/release/ikigai_jsonld.wasm
 
+      # Cache-bust the fixed-name host JS + wasm: rewrite the ?v=__BUILD__ placeholder in
+      # index.html to this commit's SHA, so every deploy fetches fresh assets instead of a
+      # (max-age=600) stale cached copy. The placeholder is harmless locally (a static
+      # server ignores the query).
+      - name: Stamp cache-busting build id
+        run: sed -i "s/__BUILD__/${GITHUB_SHA}/g" dist/index.html
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

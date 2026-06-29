@@ -104,7 +104,7 @@
 <main id="app">…</main>
 
 <script type="module">
-import init, { evalLineAsync, hostCall } from './ikigai_web_demo.js';
+import init, { evalLineAsync, hostCall } from './ikigai_web_demo.js?v=__BUILD__';
 // The dynamically-loaded XSLT module (urn:xslt:transform). The ~2.4 MB module wasm
 // (xrust) is fetched only on the first call — opening the Catalog page — not in the
 // host's initial load. The two wasm instances speak the real module-session protocol:
@@ -180,7 +180,10 @@ class IkigaiCli extends HTMLElement {
 }
 customElements.define('ikigai-cli', IkigaiCli);
 
-await init();
+// `?v=__BUILD__` is rewritten to the commit SHA by pages.yml at deploy time, so each
+// deploy fetches a fresh host JS + wasm instead of a 10-min-stale cached copy (the files
+// are fixed-name). Locally the placeholder is just a constant query a static server ignores.
+await init({ module_or_path: './ikigai_web_demo_bg.wasm?v=__BUILD__' });
 
 // The whole page is one resource: compose it through the Engine and inject the
 // result. The composed HTML contains <ikigai-cli>, which self-wires on insertion.
