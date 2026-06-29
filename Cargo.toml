@@ -45,7 +45,7 @@ ikigai-module = "0.1.7"  # with_endpoint(): lazy modules enumerate into the cata
 ikigai-http = "0.1.1"
 # Interactive runbook module (urn:runbook:*) — same module the CLI links; local path
 # during dev, publish/git when stable (like engine/resolve).
-ikigai-runbook = "0.1.8"  # Selection demo tab (typed urn:action:* + urn:kernel:actions)
+ikigai-runbook = "0.1.9"  # SHACL demo tab (validate + dogfood)
 # RDF transreption module (urn:rdf:transrept) from the ikigai-linkeddata workspace —
 # parses an RDF syntax and re-serializes to another (or to an HTML table), client-side
 # in wasm. The catalog + FOAF render to HTML through this. (SPARQL deferred to a later
