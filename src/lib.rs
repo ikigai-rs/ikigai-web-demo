@@ -60,6 +60,7 @@ const PAGE_HTML: &str = r##"
 <nav class="ik-toolbar" aria-label="pages">
   <button class="ik-nav selected" hx-get="/k/source urn:fn:compose src=urn:data:page" hx-target="#app" hx-swap="innerHTML" aria-current="page">Home</button>
   <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:docs" hx-target="#app" hx-swap="innerHTML">Catalog</button>
+  <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:control" hx-target="#app" hx-swap="innerHTML">Control</button>
   <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:demo" hx-target="#app" hx-swap="innerHTML">Demo</button>
 </nav>
 <h1>A page assembled by ikigai</h1>
@@ -95,6 +96,7 @@ const DOCS_HTML: &str = r##"
 <nav class="ik-toolbar" aria-label="pages">
   <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:page" hx-target="#app" hx-swap="innerHTML">Home</button>
   <button class="ik-nav selected" hx-get="/k/source urn:fn:compose src=urn:data:docs" hx-target="#app" hx-swap="innerHTML" aria-current="page">Catalog</button>
+  <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:control" hx-target="#app" hx-swap="innerHTML">Control</button>
   <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:demo" hx-target="#app" hx-swap="innerHTML">Demo</button>
 </nav>
 <h1>The catalog</h1>
@@ -117,6 +119,7 @@ const DEMO_HTML: &str = r##"
 <nav class="ik-toolbar" aria-label="pages">
   <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:page" hx-target="#app" hx-swap="innerHTML">Home</button>
   <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:docs" hx-target="#app" hx-swap="innerHTML">Catalog</button>
+  <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:control" hx-target="#app" hx-swap="innerHTML">Control</button>
   <button class="ik-nav selected" hx-get="/k/source urn:fn:compose src=urn:data:demo" hx-target="#app" hx-swap="innerHTML" aria-current="page">Demo</button>
 </nav>
 <h1>Guided demos</h1>
@@ -124,6 +127,44 @@ const DEMO_HTML: &str = r##"
    as htmx (HATEOAS); switching tabs and running steps are both just "resolve a resource."</p>
 <section id="runbook" aria-label="ikigai runbook"
      hx-get="/k/source urn:runbook:basics as=text/html" hx-trigger="load" hx-swap="innerHTML">loading runbook…</section>
+"##;
+
+/// `urn:data:control` — the **Control** page: the kernel's control plane as one composed
+/// resource. The two `$a{}` markers are sub-requests the `compose` resolves and inlines —
+/// `urn:kernel:scheduler` (backend / threads / live task counts) and `urn:kernel:cache`
+/// (what's cached). So this single page *is* "a composite resource pulling two
+/// subrequests," and its cache validity folds both (the ROC composition, not bespoke JS).
+/// The readouts are `text/plain`, dropped into `<pre>` so their layout survives. Live
+/// updates (a timer re-requesting this page) and click-through to a cached element land
+/// with the time-transport slice; for now it's a static snapshot per visit.
+const CONTROL_HTML: &str = r##"
+<nav class="ik-toolbar" aria-label="pages">
+  <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:page" hx-target="#app" hx-swap="innerHTML">Home</button>
+  <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:docs" hx-target="#app" hx-swap="innerHTML">Catalog</button>
+  <button class="ik-nav selected" hx-get="/k/source urn:fn:compose src=urn:data:control" hx-target="#app" hx-swap="innerHTML" aria-current="page">Control</button>
+  <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:demo" hx-target="#app" hx-swap="innerHTML">Demo</button>
+</nav>
+<h1>Control plane</h1>
+<p class="sub">One composed resource. The browser issued a single
+   <code>compose(urn:data:control)</code>; the kernel resolved it and inlined two
+   sub-requests — <code>urn:kernel:scheduler</code> and <code>urn:kernel:cache</code> —
+   each a resource you can <code>source</code> on its own. The page's cache validity folds
+   both. Live ticking and clicking through to a cached entry arrive with the time
+   transport.</p>
+<div class="ctl-grid">
+  <section class="ctl-card">
+    <h2 class="ctl-title">Scheduler</h2>
+    <p class="ctl-note">The host work backend and its live task counts —
+       <code>source urn:kernel:scheduler</code>.</p>
+    <pre class="ctl-readout">$a{urn:kernel:scheduler}</pre>
+  </section>
+  <section class="ctl-card ctl-card-cache">
+    <h2 class="ctl-title">Cache</h2>
+    <p class="ctl-note">The golden-thread cache —
+       <code>source urn:kernel:cache</code>. Clicking through to a cached entry is coming.</p>
+    <pre class="ctl-readout">$a{urn:kernel:cache}</pre>
+  </section>
+</div>
 "##;
 
 /// `urn:style:catalog-cards` — the XSLT stylesheet (a resource) that styles the catalog
@@ -817,6 +858,15 @@ pub fn build_kernel(nature: &'static str) -> Kernel {
                 "Demo page",
                 "The guided runbook demos (urn:runbook:*) on their own page, reached from the toolbar.",
                 DEMO_HTML,
+            ),
+        )
+        .bind(
+            Exact::new("urn:data:control"),
+            shape(
+                "control",
+                "Control page",
+                "The kernel control plane — scheduler + cache — as one composed resource (two sub-requests).",
+                CONTROL_HTML,
             ),
         )
         .bind(
