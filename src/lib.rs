@@ -462,9 +462,9 @@ fn runbook_timer() -> FnEndpoint {
              <li><button class=\"rb-step\" hx-get=\"/k/source urn:time:jobs\" \
                hx-target=\"#rb-out\" hx-swap=\"beforeend\">list the timed jobs</button> \
                <span class=\"rb-note\">id · interval · run count · last greeting</span></li>\
-             <li><button class=\"rb-step\" hx-get=\"/k/source urn:time:cancel id=1\" \
-               hx-target=\"#rb-out\" hx-swap=\"beforeend\">stop job #1</button> \
-               <span class=\"rb-note\">cancels the timer (start it once, then stop #1)</span></li>\
+             <li><button class=\"rb-step\" hx-get=\"/k/source urn:time:cancel id=all\" \
+               hx-target=\"#rb-out\" hx-swap=\"beforeend\">stop the greeter timer</button> \
+               <span class=\"rb-note\">cancels every timed job — no need to know the id</span></li>\
              </ol>\
              <pre id=\"rb-out\" class=\"rb-out\" aria-live=\"polite\"></pre></section>",
             strip = ikigai_runbook::render_tab_strip("timer"),
