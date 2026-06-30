@@ -97,6 +97,17 @@
   .ik-try .ik-try-label { color: #777; font-size: 13px; }
   .ik-try button { background: #f3f6f9; color: #1f7199; border: 1px solid #ccd6dd; border-radius: 6px; padding: 4px 10px; font: 12.5px ui-monospace, Menlo, monospace; cursor: pointer; }
   .ik-try button:hover { background: #e7eef3; border-color: #1f7199; }
+
+  /* Control page — the scheduler + cache readouts, each a composed sub-request. */
+  .ctl-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin-top: 16px; }
+  .ctl-card { border: 1px solid #dfe2e5; border-radius: 10px; padding: 12px 16px 14px; background: #fff; border-left: 3px solid #1f7199; }
+  .ctl-card-cache { border-left-color: #d98324; }
+  .ctl-card-time { border-left-color: #2f9e44; }
+  .ctl-title { font-size: 16px; color: #1f7199; margin: 0 0 2px; }
+  .ctl-card-cache .ctl-title { color: #a85b00; }
+  .ctl-card-time .ctl-title { color: #2b8a3e; }
+  .ctl-note { color: #777; font-size: 12.5px; margin: 0 0 8px; }
+  .ctl-readout { background: #0f1419; color: #d7dde3; border-radius: 8px; padding: 10px 12px; margin: 0; overflow-x: auto; white-space: pre; font: 13px/1.5 ui-monospace, Menlo, monospace; }
 </style>
 <script src="https://unpkg.com/htmx.org@2.0.4"></script>
 </head>
