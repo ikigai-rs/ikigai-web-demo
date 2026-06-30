@@ -146,11 +146,10 @@ const CONTROL_HTML: &str = r##"
 </nav>
 <h1>Control plane</h1>
 <p class="sub">One composed resource. The browser issued a single
-   <code>compose(urn:data:control)</code>; the kernel resolved it and inlined two
-   sub-requests — <code>urn:kernel:scheduler</code> and <code>urn:kernel:cache</code> —
-   each a resource you can <code>source</code> on its own. The page's cache validity folds
-   both. Live ticking and clicking through to a cached entry arrive with the time
-   transport.</p>
+   <code>compose(urn:data:control)</code>; the kernel resolved it and inlined three
+   sub-requests — <code>urn:kernel:scheduler</code>, <code>urn:kernel:cache</code>, and
+   <code>urn:time:jobs</code> — each a resource you can <code>source</code> on its own.
+   The page's cache validity folds all three.</p>
 <div class="ctl-grid">
   <section class="ctl-card">
     <h2 class="ctl-title">Scheduler</h2>
@@ -161,8 +160,14 @@ const CONTROL_HTML: &str = r##"
   <section class="ctl-card ctl-card-cache">
     <h2 class="ctl-title">Cache</h2>
     <p class="ctl-note">The golden-thread cache —
-       <code>source urn:kernel:cache</code>. Clicking through to a cached entry is coming.</p>
+       <code>source urn:kernel:cache</code>.</p>
     <pre class="ctl-readout">$a{urn:kernel:cache}</pre>
+  </section>
+  <section class="ctl-card ctl-card-time">
+    <h2 class="ctl-title">Time jobs</h2>
+    <p class="ctl-note">The time transport's timed jobs —
+       <code>source urn:time:jobs</code>. A job fires a resource-request on a timer.</p>
+    <pre class="ctl-readout">$a{urn:time:jobs}</pre>
   </section>
 </div>
 "##;
@@ -910,7 +915,8 @@ pub fn build_kernel(nature: &'static str) -> Kernel {
     // from inside the tab, the same resource model the native CLI drives with ureq.
     // A `Date`-backed clock lets the kernel honour `Cache-Control: max-age` (and feeds
     // `urn:kernel:constraint` timing), exactly as `SystemClock` does natively.
-    let root: Arc<dyn Space> = Arc::new(Fallback::new(vec![
+    #[allow(unused_mut)]
+    let mut spaces: Vec<Arc<dyn Space>> = vec![
         Arc::new(space) as Arc<dyn Space>,
         Arc::new(ikigai_http::space(Arc::new(BrowserFetchTransport))) as Arc<dyn Space>,
         // RDF transreption (`urn:rdf:transrept`) — parses RDF and re-serializes to another
@@ -940,7 +946,13 @@ pub fn build_kernel(nature: &'static str) -> Kernel {
         // fetched graph the server mislabels `application/octet-stream` transrepts in the
         // tab without the caller asserting its input type.
         Arc::new(ikigai_sniff::space()) as Arc<dyn Space>,
-    ]));
+    ];
+    // The time transport's control plane (urn:time:schedule/cancel/jobs) — browser only;
+    // fires a kernel request on a setInterval-backed timer. Its resolver is installed in
+    // the ENGINE init once the kernel exists. (The native server has no timed jobs.)
+    #[cfg(target_family = "wasm")]
+    spaces.push(Arc::new(ikigai_time::space(time_registry())) as Arc<dyn Space>);
+    let root: Arc<dyn Space> = Arc::new(Fallback::new(spaces));
     // Fold the runbook's RDFS alignment graph (foaf:Person ⊑ schema:Person) into the
     // kernel's subclass closure, so type-aware action selection (urn:kernel:actions) reasons
     // over the hierarchy — a foaf:Person entity satisfies a schema:Person action.
@@ -1072,6 +1084,75 @@ async fn browser_fetch(
     Err("browser fetch is wasm-only".to_string())
 }
 
+// Closures backing live `setInterval`/`setTimeout` timers, kept alive while their
+// timer is registered — a JS callback that outlives this call would otherwise be
+// dropped and fail to fire. Keyed by the timer handle so cancellation clears and
+// drops it. (Cancellation runs from outside the closure, so there's no self-borrow.)
+#[cfg(target_family = "wasm")]
+thread_local! {
+    static TIMERS: std::cell::RefCell<std::collections::HashMap<i32, wasm_bindgen::closure::Closure<dyn FnMut()>>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+/// The browser [`TimerBackend`](ikigai_time::TimerBackend): schedules `on_tick` on the
+/// JS event loop via `setInterval` (recurring) or `setTimeout` (one-shot) — the
+/// `setInterval`-backed analogue of the time transport's native `ThreadTimer`. The tick
+/// runs on the loop, so a timed `source` of an immediately-ready endpoint (the greeter)
+/// resolves without blocking it.
+#[cfg(target_family = "wasm")]
+struct IntervalTimer;
+
+#[cfg(target_family = "wasm")]
+impl ikigai_time::TimerBackend for IntervalTimer {
+    fn start(
+        &self,
+        interval: std::time::Duration,
+        recurring: bool,
+        on_tick: Arc<dyn Fn() + Send + Sync>,
+    ) -> ikigai_time::TimerHandle {
+        use wasm_bindgen::JsCast;
+        let window = web_sys::window().expect("no window for timer");
+        let cb = wasm_bindgen::closure::Closure::<dyn FnMut()>::new(move || on_tick());
+        let ms = interval.as_millis() as i32;
+        let id = if recurring {
+            window
+                .set_interval_with_callback_and_timeout_and_arguments_0(cb.as_ref().unchecked_ref(), ms)
+                .expect("setInterval")
+        } else {
+            window
+                .set_timeout_with_callback_and_timeout_and_arguments_0(cb.as_ref().unchecked_ref(), ms)
+                .expect("setTimeout")
+        };
+        TIMERS.with(|t| {
+            t.borrow_mut().insert(id, cb);
+        });
+        ikigai_time::TimerHandle::new(move || {
+            if let Some(w) = web_sys::window() {
+                if recurring {
+                    w.clear_interval_with_handle(id);
+                } else {
+                    w.clear_timeout_with_handle(id);
+                }
+            }
+            TIMERS.with(|t| {
+                t.borrow_mut().remove(&id);
+            });
+        })
+    }
+}
+
+/// The registry of timed jobs (thread-local — the browser is single-threaded), driven
+/// by the browser [`IntervalTimer`]. Shared by the `urn:time:*` endpoints bound in
+/// [`build_kernel`] and the kernel resolver installed in the `ENGINE` init.
+#[cfg(target_family = "wasm")]
+fn time_registry() -> ikigai_time::JobRegistry {
+    thread_local! {
+        static REGISTRY: ikigai_time::JobRegistry =
+            ikigai_time::JobRegistry::new(Arc::new(IntervalTimer));
+    }
+    REGISTRY.with(Clone::clone)
+}
+
 // A `Resolver` handle to the *same* kernel the Engine drives, kept so the XSLT module's
 // `hostCall` session callbacks resolve to full `Representation`s (golden threads + expiry) —
 // the host folds those into the transform's cache provenance so a change to the module's
@@ -1100,9 +1181,16 @@ thread_local! {
         // Stash a Resolver handle to the same kernel for the module callback path before
         // the Engine takes ownership (see `RESOLVER` above and `host_resolve`).
         #[cfg(target_family = "wasm")]
-        RESOLVER.with(|r| {
-            *r.borrow_mut() = Some(kernel.clone() as Arc<dyn ikigai_resolve::Resolver>);
-        });
+        {
+            let resolver = kernel.clone() as Arc<dyn ikigai_resolve::Resolver>;
+            RESOLVER.with(|r| {
+                *r.borrow_mut() = Some(resolver.clone());
+            });
+            // The time transport fires its timed requests on this same kernel, now that
+            // it exists (the urn:time:* endpoints are bound into it). A fired job
+            // re-enters here, resolving its target against the shared space + cache.
+            time_registry().set_resolver(resolver);
+        }
         let engine = ikigai_engine::Engine::new(kernel);
         #[cfg(target_family = "wasm")]
         let engine = engine.with_spawner(Arc::new(WasmSpawner));
