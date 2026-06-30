@@ -245,9 +245,9 @@ const WEB_CLI_HTML: &str = r#"<section class="cli-mount">
      <code>..</code>, fork <code>( a ; b )</code>, named <code>key=value</code> args, plus
      <code>compose</code>, <code>cache</code>, <code>cap</code>, and <code>list</code>. Try
      <code>list</code>, or <code>source urn:fn:compose src=urn:data:page</code> to compose this
-     very page. The <b>ZeroTrust</b> buttons below walk the capability story — narrow the
-     session with <code>cap read-only</code> and watch a write get refused, while the jail
-     refuses to escape even at full authority.</p>
+     very page. You can walk the capability story right here — narrow the session with
+     <code>cap read-only</code> and watch a write get refused, while the jail refuses to be
+     escaped even at full authority (the guided walkthrough is the <b>Demo → ZeroTrust</b> tab).</p>
   <ikigai-cli></ikigai-cli>
 </section>"#;
 
