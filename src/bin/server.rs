@@ -14,7 +14,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use ikigai_core::Kernel;
+use ikigai_core::{Capability, Kernel};
 use ikigai_resolve::Resolver;
 use ikigai_wire::{decode, encode, Call, Reply};
 use tokio::io::AsyncReadExt;
@@ -92,7 +92,22 @@ fn dispatch(kernel: &Kernel, bytes: &[u8]) -> Vec<u8> {
             Ok((representation, status)) => Reply::Resolved(representation, status),
             Err(e) => Reply::Error(e),
         },
-        Ok(Call::IsCached(request)) => Reply::Cached(Resolver::is_cached(kernel, &request)),
+        // Capability-on-the-wire. This demo server authenticates no client principal
+        // (self-signed cert, no client auth), so its effective entitlement is root and
+        // the carried capability is already ≤ root — resolving under it *is* the clamp,
+        // exactly as the peercred-owned IPC path does. A future authenticated principal
+        // would intersect the carried capability with its entitlement here.
+        Ok(Call::IssueAs(request, capability)) => {
+            match Resolver::issue_as(kernel, request, &capability) {
+                Ok((representation, status)) => Reply::Resolved(representation, status),
+                Err(e) => Reply::Error(e),
+            }
+        }
+        // Trusted in-process path (like `issue` above, which resolves under root), so
+        // probe the cache under the root capability.
+        Ok(Call::IsCached(request)) => {
+            Reply::Cached(Resolver::is_cached(kernel, &request, &Capability::root()))
+        }
         Ok(Call::Entries) => Reply::Entries(Resolver::entries(kernel)),
         Err(e) => Reply::Error(format!("undecodable call: {e}")),
     };
