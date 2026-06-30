@@ -172,8 +172,8 @@ const CONTROL_CARDS_HTML: &str = r##"
 </section>
 <section class="ctl-card ctl-card-cache">
   <h2 class="ctl-title">Cache</h2>
-  <p class="ctl-note">The golden-thread cache —
-     <code>source urn:kernel:cache</code>.</p>
+  <p class="ctl-note">The golden-thread cache — <code>source urn:kernel:cache</code>. Each
+     entry: the IRI, its representation type and size, and the golden threads it depends on.</p>
   <pre class="ctl-readout">$a{urn:kernel:cache}</pre>
 </section>
 <section class="ctl-card ctl-card-time">
