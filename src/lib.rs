@@ -144,14 +144,15 @@ const CONTROL_HTML: &str = r##"
   <button class="ik-nav selected" hx-get="/k/source urn:fn:compose src=urn:data:control" hx-target="#app" hx-swap="innerHTML" aria-current="page">Control</button>
   <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:demo" hx-target="#app" hx-swap="innerHTML">Demo</button>
 </nav>
-<h1>Control plane</h1>
+<h1>Control plane <span class="ctl-live"><span class="ctl-live-dot"></span>live</span></h1>
 <p class="sub">One composed resource that <em>updates itself</em>. The readouts are their own
    resource — <code>urn:data:control-cards</code> — which this panel re-requests once a
    second with htmx polling (<code>hx-trigger="every 1s"</code>). htmx starts the timer when
    the Control page is shown and cancels it the moment you navigate away; no bespoke
    JavaScript. Each tick re-<code>compose</code>s three sub-requests —
    <code>urn:kernel:scheduler</code>, <code>urn:kernel:cache</code>, and
-   <code>urn:time:jobs</code>.</p>
+   <code>urn:time:jobs</code>. Open the <strong>Demo → Timer</strong> tab, start the greeter
+   timer, and watch the <em>Time jobs</em> run count climb here each second.</p>
 <div hx-get="/k/source urn:fn:compose src=urn:data:control-cards"
      hx-trigger="load, every 1s" hx-target="#ctl-cards" hx-swap="innerHTML" style="display:contents">
   <div id="ctl-cards" class="ctl-grid"></div>
