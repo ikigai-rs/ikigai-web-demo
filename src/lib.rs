@@ -52,6 +52,55 @@ impl Endpoint for Greeter {
     }
 }
 
+/// `urn:time:now` — the current **local** time as `HH:MM`, served by a **cacheable**
+/// endpoint whose expiry is the **next minute boundary** (`cacheable_until` →
+/// `Expiry::At`, honoured by the injected `BrowserClock`). The nav clock polls it once a
+/// second, but within the minute every request is a cache HIT returning the same HH:MM;
+/// at the minute the cache expires and it recomputes. So a 1s poll updates the display
+/// only once a minute — a demo that even *time*, the canonical uncacheable, caches
+/// cleanly given a precise expiry. The `:` is its own span so the nav can blink it.
+fn clock_now() -> FnEndpoint {
+    FnEndpoint::new("clock-now", |_inv: &Invocation<'_>| {
+        #[cfg(target_family = "wasm")]
+        let (h, m, now_ms) = {
+            // js_sys::Date getters are LOCAL-timezone — "localized to the browser".
+            let d = js_sys::Date::new_0();
+            (
+                d.get_hours() as u32,
+                d.get_minutes() as u32,
+                js_sys::Date::now() as u64,
+            )
+        };
+        #[cfg(not(target_family = "wasm"))]
+        let (h, m, now_ms) = {
+            // Native WebTransport-server build (not the showcase): UTC fallback.
+            let ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            (((ms / 3_600_000) % 24) as u32, ((ms / 60_000) % 60) as u32, ms)
+        };
+        let next_minute = ((now_ms / 60_000) + 1) * 60_000;
+        let body = format!("{h:02}<span class=\"ik-clock-colon\">:</span>{m:02}");
+        Ok(Representation::new(
+            ReprType::new("text/html").with_param("charset", "utf-8"),
+            body.into_bytes(),
+        )
+        .cacheable_until(Time::from_millis(next_minute)))
+    })
+    .with_description(
+        Description::new("clock-now")
+            .title("Clock")
+            .summary(
+                "The current local time (HH:MM), cacheable until the next minute boundary — \
+                 the nav clock polls it every second but it only recomputes once a minute.",
+            )
+            .verb(Verb::Source)
+            .verb(Verb::Meta)
+            .output("text/html;charset=utf-8"),
+    )
+}
+
 /// `urn:data:page` — the page *shape*. A `compose` source: HTML whose `$a{<iri>}`
 /// markers transclude other resources in this kernel (one of them, `urn:demo:web-cli`,
 /// mounts the live terminal). Composition recurses — `urn:data:about` is itself a
@@ -62,6 +111,7 @@ const PAGE_HTML: &str = r##"
   <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:docs" hx-target="#app" hx-swap="innerHTML">Catalog</button>
   <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:control" hx-target="#app" hx-swap="innerHTML">Control</button>
   <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:demo" hx-target="#app" hx-swap="innerHTML">Demo</button>
+  <span class="ik-clock" title="local time — a cacheable resource (urn:time:now) polled every second, recomputed once a minute" hx-get="/k/source urn:time:now" hx-trigger="load, every 1s" hx-target="#ik-clock-val" hx-swap="innerHTML"><span id="ik-clock-val" class="ik-clock-val"></span></span>
 </nav>
 <h1>A page assembled by ikigai</h1>
 <p class="sub">This whole page is <b>one resource</b>. The browser issued a single
@@ -98,6 +148,7 @@ const DOCS_HTML: &str = r##"
   <button class="ik-nav selected" hx-get="/k/source urn:fn:compose src=urn:data:docs" hx-target="#app" hx-swap="innerHTML" aria-current="page">Catalog</button>
   <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:control" hx-target="#app" hx-swap="innerHTML">Control</button>
   <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:demo" hx-target="#app" hx-swap="innerHTML">Demo</button>
+  <span class="ik-clock" title="local time — a cacheable resource (urn:time:now) polled every second, recomputed once a minute" hx-get="/k/source urn:time:now" hx-trigger="load, every 1s" hx-target="#ik-clock-val" hx-swap="innerHTML"><span id="ik-clock-val" class="ik-clock-val"></span></span>
 </nav>
 <h1>The catalog</h1>
 <p class="sub">The kernel describes itself. <code>urn:kernel:catalog</code> emits every bound
@@ -121,6 +172,7 @@ const DEMO_HTML: &str = r##"
   <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:docs" hx-target="#app" hx-swap="innerHTML">Catalog</button>
   <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:control" hx-target="#app" hx-swap="innerHTML">Control</button>
   <button class="ik-nav selected" hx-get="/k/source urn:fn:compose src=urn:data:demo" hx-target="#app" hx-swap="innerHTML" aria-current="page">Demo</button>
+  <span class="ik-clock" title="local time — a cacheable resource (urn:time:now) polled every second, recomputed once a minute" hx-get="/k/source urn:time:now" hx-trigger="load, every 1s" hx-target="#ik-clock-val" hx-swap="innerHTML"><span id="ik-clock-val" class="ik-clock-val"></span></span>
 </nav>
 <h1>Guided demos</h1>
 <p class="sub">Runnable walkthroughs — each tab is a <code>urn:runbook:*</code> resource rendered
@@ -143,6 +195,7 @@ const CONTROL_HTML: &str = r##"
   <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:docs" hx-target="#app" hx-swap="innerHTML">Catalog</button>
   <button class="ik-nav selected" hx-get="/k/source urn:fn:compose src=urn:data:control" hx-target="#app" hx-swap="innerHTML" aria-current="page">Control</button>
   <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:demo" hx-target="#app" hx-swap="innerHTML">Demo</button>
+  <span class="ik-clock" title="local time — a cacheable resource (urn:time:now) polled every second, recomputed once a minute" hx-get="/k/source urn:time:now" hx-trigger="load, every 1s" hx-target="#ik-clock-val" hx-swap="innerHTML"><span id="ik-clock-val" class="ik-clock-val"></span></span>
 </nav>
 <h1>Control plane <span class="ctl-live"><span class="ctl-live-dot"></span>live</span></h1>
 <p class="sub">One composed resource that <em>updates itself</em>. The readouts are their own
@@ -889,6 +942,7 @@ pub fn build_kernel(nature: &'static str) -> Kernel {
     // shapes, the in-page terminal mount, the greeter, and `urn:host:info`.
     let space = ikigai_fn::space()
         .bind(Exact::new("urn:demo:greeter"), Greeter)
+        .bind(Exact::new("urn:time:now"), clock_now())
         .bind(
             Exact::new("urn:demo:web-cli"),
             shape(

@@ -63,6 +63,13 @@
   .ik-nav { background: transparent; border: 0; border-bottom: 2px solid transparent; padding: 8px 14px; font: 14.5px system-ui, sans-serif; color: #1f7199; cursor: pointer; }
   .ik-nav:hover { background: #f3f6f9; }
   .ik-nav.selected { border-bottom-color: #1f7199; font-weight: 600; }
+  /* Nav clock — pushed to the far right; HH:MM from the cacheable urn:time:now,
+     polled every second but recomputed once a minute. The colon blinks per second. */
+  .ik-clock { margin-left: auto; display: inline-flex; align-items: center; padding: 8px 2px 8px 12px;
+              font: 600 14.5px/1 ui-monospace, Menlo, monospace; color: #1f7199; font-variant-numeric: tabular-nums; letter-spacing: .5px; }
+  .ik-clock-colon { animation: ik-blink 1s step-end infinite; }
+  @keyframes ik-blink { 50% { opacity: 0.2; } }
+  @media (prefers-reduced-motion: reduce) { .ik-clock-colon { animation: none; } }
 
   /* Endpoint cards — the catalog RDF/XML styled by urn:xslt:transform. A responsive
      grid that collapses to one column on a phone. */
