@@ -129,14 +129,14 @@ const DEMO_HTML: &str = r##"
      hx-get="/k/source urn:runbook:basics as=text/html" hx-trigger="load" hx-swap="innerHTML">loading runbook…</section>
 "##;
 
-/// `urn:data:control` — the **Control** page: the kernel's control plane as one composed
-/// resource. The two `$a{}` markers are sub-requests the `compose` resolves and inlines —
-/// `urn:kernel:scheduler` (backend / threads / live task counts) and `urn:kernel:cache`
-/// (what's cached). So this single page *is* "a composite resource pulling two
-/// subrequests," and its cache validity folds both (the ROC composition, not bespoke JS).
-/// The readouts are `text/plain`, dropped into `<pre>` so their layout survives. Live
-/// updates (a timer re-requesting this page) and click-through to a cached element land
-/// with the time-transport slice; for now it's a static snapshot per visit.
+/// `urn:data:control` — the **Control** page: the kernel's control plane, *self-updating*.
+/// The live readouts are their own resource ([`CONTROL_CARDS_HTML`], `urn:data:control-cards`)
+/// that the page polls once a second with htmx (`hx-trigger="every 1s"`) — htmx starts the
+/// timer when this page is shown and cancels it when you navigate away (the polling element
+/// leaves the DOM), so the "register on show / stop on leave" lifecycle is pure declarative
+/// htmx, no bespoke JavaScript. Each poll re-`compose`s the three sub-requests
+/// (`urn:kernel:scheduler` + `urn:kernel:cache` + `urn:time:jobs`); the page is still "a
+/// composite resource pulling subrequests," now ticking live.
 const CONTROL_HTML: &str = r##"
 <nav class="ik-toolbar" aria-label="pages">
   <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:page" hx-target="#app" hx-swap="innerHTML">Home</button>
@@ -145,31 +145,42 @@ const CONTROL_HTML: &str = r##"
   <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:demo" hx-target="#app" hx-swap="innerHTML">Demo</button>
 </nav>
 <h1>Control plane</h1>
-<p class="sub">One composed resource. The browser issued a single
-   <code>compose(urn:data:control)</code>; the kernel resolved it and inlined three
-   sub-requests — <code>urn:kernel:scheduler</code>, <code>urn:kernel:cache</code>, and
-   <code>urn:time:jobs</code> — each a resource you can <code>source</code> on its own.
-   The page's cache validity folds all three.</p>
-<div class="ctl-grid">
-  <section class="ctl-card">
-    <h2 class="ctl-title">Scheduler</h2>
-    <p class="ctl-note">The host work backend and its live task counts —
-       <code>source urn:kernel:scheduler</code>.</p>
-    <pre class="ctl-readout">$a{urn:kernel:scheduler}</pre>
-  </section>
-  <section class="ctl-card ctl-card-cache">
-    <h2 class="ctl-title">Cache</h2>
-    <p class="ctl-note">The golden-thread cache —
-       <code>source urn:kernel:cache</code>.</p>
-    <pre class="ctl-readout">$a{urn:kernel:cache}</pre>
-  </section>
-  <section class="ctl-card ctl-card-time">
-    <h2 class="ctl-title">Time jobs</h2>
-    <p class="ctl-note">The time transport's timed jobs —
-       <code>source urn:time:jobs</code>. A job fires a resource-request on a timer.</p>
-    <pre class="ctl-readout">$a{urn:time:jobs}</pre>
-  </section>
+<p class="sub">One composed resource that <em>updates itself</em>. The readouts are their own
+   resource — <code>urn:data:control-cards</code> — which this panel re-requests once a
+   second with htmx polling (<code>hx-trigger="every 1s"</code>). htmx starts the timer when
+   the Control page is shown and cancels it the moment you navigate away; no bespoke
+   JavaScript. Each tick re-<code>compose</code>s three sub-requests —
+   <code>urn:kernel:scheduler</code>, <code>urn:kernel:cache</code>, and
+   <code>urn:time:jobs</code>.</p>
+<div hx-get="/k/source urn:fn:compose src=urn:data:control-cards"
+     hx-trigger="load, every 1s" hx-target="#ctl-cards" hx-swap="innerHTML" style="display:contents">
+  <div id="ctl-cards" class="ctl-grid"></div>
 </div>
+"##;
+
+/// `urn:data:control-cards` — the live readouts of the Control page, split into their own
+/// composable resource so the page can poll *just this* once a second (htmx
+/// `hx-trigger="every 1s"`) rather than re-rendering the whole page. Three `$a{}` markers
+/// `compose` resolves and inlines: the scheduler, the cache, and the time-transport jobs.
+const CONTROL_CARDS_HTML: &str = r##"
+<section class="ctl-card">
+  <h2 class="ctl-title">Scheduler</h2>
+  <p class="ctl-note">The host work backend and its live task counts —
+     <code>source urn:kernel:scheduler</code>.</p>
+  <pre class="ctl-readout">$a{urn:kernel:scheduler}</pre>
+</section>
+<section class="ctl-card ctl-card-cache">
+  <h2 class="ctl-title">Cache</h2>
+  <p class="ctl-note">The golden-thread cache —
+     <code>source urn:kernel:cache</code>.</p>
+  <pre class="ctl-readout">$a{urn:kernel:cache}</pre>
+</section>
+<section class="ctl-card ctl-card-time">
+  <h2 class="ctl-title">Time jobs</h2>
+  <p class="ctl-note">The time transport's timed jobs —
+     <code>source urn:time:jobs</code>. A job fires a resource-request on a timer.</p>
+  <pre class="ctl-readout">$a{urn:time:jobs}</pre>
+</section>
 "##;
 
 /// `urn:style:catalog-cards` — the XSLT stylesheet (a resource) that styles the catalog
@@ -421,6 +432,52 @@ fn runbook_identity() -> FnEndpoint {
         Description::new("runbook-identity")
             .title("Identity")
             .summary("The passkey identity runbook tab — sign in and watch the segment boundary.")
+            .verb(Verb::Source)
+            .verb(Verb::Meta)
+            .output("text/html;charset=utf-8"),
+    )
+}
+
+/// `urn:runbook:timer` — a browser runbook tab that **starts/stops a recurring time job**.
+/// "Start" schedules the greeter (`urn:demo:greeter`, the same endpoint the Selection demo
+/// uses) to fire every second through the time transport. The job lives in the kernel's job
+/// registry — *not* in this tab's DOM — so it keeps ticking when you switch to the Control
+/// panel, whose self-refreshing *Time jobs* card shows the run count climbing and the latest
+/// greeting. "Stop" cancels it. The buttons are pure `hx-get="/k/<command>"` — the same
+/// HATEOAS adapter every runbook step uses; no bespoke JavaScript.
+fn runbook_timer() -> FnEndpoint {
+    FnEndpoint::new("runbook-timer", move |_inv: &Invocation<'_>| {
+        let body = format!(
+            "{strip}<section class=\"rb-panel\" role=\"tabpanel\">\
+             <p class=\"rb-intro\">The <b>time transport</b> fires a resource-request on a timer. \
+             Start a one-second job that sources <code>urn:demo:greeter</code> on every tick, then \
+             switch to the <b>Control</b> panel and watch it tick live in the <i>Time jobs</i> card. \
+             The job runs in the kernel, so it keeps firing while you're on another page — come back \
+             here to stop it.</p>\
+             <ol class=\"rb-steps\">\
+             <li><button class=\"rb-step\" \
+               hx-get=\"/k/source urn:time:schedule target=urn:demo:greeter every=1s\" \
+               hx-target=\"#rb-out\" hx-swap=\"beforeend\">start a 1-second greeter timer</button> \
+               <span class=\"rb-note\">schedules <code>urn:demo:greeter</code> every 1s — persists across navigation</span></li>\
+             <li><button class=\"rb-step\" hx-get=\"/k/source urn:time:jobs\" \
+               hx-target=\"#rb-out\" hx-swap=\"beforeend\">list the timed jobs</button> \
+               <span class=\"rb-note\">id · interval · run count · last greeting</span></li>\
+             <li><button class=\"rb-step\" hx-get=\"/k/source urn:time:cancel id=1\" \
+               hx-target=\"#rb-out\" hx-swap=\"beforeend\">stop job #1</button> \
+               <span class=\"rb-note\">cancels the timer (start it once, then stop #1)</span></li>\
+             </ol>\
+             <pre id=\"rb-out\" class=\"rb-out\" aria-live=\"polite\"></pre></section>",
+            strip = ikigai_runbook::render_tab_strip("timer"),
+        );
+        Ok(Representation::new(
+            ReprType::new("text/html").with_param("charset", "utf-8"),
+            body.into_bytes(),
+        ))
+    })
+    .with_description(
+        Description::new("runbook-timer")
+            .title("Timer")
+            .summary("A runbook tab: start/stop a recurring time job that fires the greeter every second.")
             .verb(Verb::Source)
             .verb(Verb::Meta)
             .output("text/html;charset=utf-8"),
@@ -824,6 +881,8 @@ pub fn build_kernel(nature: &'static str) -> Kernel {
     // Register the browser-only Identity tab so the shared runbook strip lists it
     // (idempotent). Its panel is `urn:runbook:identity`, bound below.
     ikigai_runbook::add_tab("identity", "Identity");
+    // The browser-only Timer tab (urn:runbook:timer): start/stop a recurring time job.
+    ikigai_runbook::add_tab("timer", "Timer");
     // The reusable functions come from the linked `ikigai-fn` module crate
     // (compiled to wasm32 alongside this lib); this host chains its own page
     // shapes, the in-page terminal mount, the greeter, and `urn:host:info`.
@@ -870,8 +929,17 @@ pub fn build_kernel(nature: &'static str) -> Kernel {
             shape(
                 "control",
                 "Control page",
-                "The kernel control plane — scheduler + cache — as one composed resource (two sub-requests).",
+                "The kernel control plane — scheduler + cache + time jobs — as one self-updating composed resource.",
                 CONTROL_HTML,
+            ),
+        )
+        .bind(
+            Exact::new("urn:data:control-cards"),
+            shape(
+                "control-cards",
+                "Control readouts",
+                "The Control page's live readouts (scheduler + cache + time jobs), polled once a second by the page.",
+                CONTROL_CARDS_HTML,
             ),
         )
         .bind(
@@ -898,6 +966,7 @@ pub fn build_kernel(nature: &'static str) -> Kernel {
         .bind(Exact::new("urn:host:info"), host_info(nature))
         .bind(Exact::new("urn:host:identity"), host_identity())
         .bind(Exact::new("urn:runbook:identity"), runbook_identity())
+        .bind(Exact::new("urn:runbook:timer"), runbook_timer())
         // The capability-gated file module on its browser backend: `urn:file:{path}`
         // resolves to `localStorage` (keyed `ikigai:fs:ws/<path>`), jailed to the
         // virtual `ws` root. Same module, same `file:` contract as the native CLI —
