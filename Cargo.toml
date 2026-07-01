@@ -86,7 +86,7 @@ ikigai-shacl = "0.1.0"
 # The time transport — only the browser drives it here (the native server doesn't
 # need timed jobs). Its native ThreadTimer is cfg'd out on wasm; this lib supplies a
 # `setInterval`-backed TimerBackend instead.
-ikigai-time = "0.1.9"  # urn:time:cancel id=all (bulletproof Stop button)
+ikigai-time = "0.1.10"  # persistent jobs (clock) + cancel target=<iri> (greeter Stop)
 web-sys = { version = "0.3", features = [
     "Window", "EventTarget", "StorageEvent",
     "Request", "RequestInit", "Response", "Headers",
