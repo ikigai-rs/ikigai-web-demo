@@ -69,11 +69,8 @@ fn clock_now() -> FnEndpoint {
         let (h, m, now_ms) = {
             // js_sys::Date getters are LOCAL-timezone — "localized to the browser".
             let d = js_sys::Date::new_0();
-            (
-                d.get_hours() as u32,
-                d.get_minutes() as u32,
-                js_sys::Date::now() as u64,
-            )
+            // get_hours()/get_minutes() already return u32.
+            (d.get_hours(), d.get_minutes(), js_sys::Date::now() as u64)
         };
         #[cfg(not(target_family = "wasm"))]
         let (h, m, now_ms) = {
@@ -82,7 +79,11 @@ fn clock_now() -> FnEndpoint {
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_millis() as u64)
                 .unwrap_or(0);
-            (((ms / 3_600_000) % 24) as u32, ((ms / 60_000) % 60) as u32, ms)
+            (
+                ((ms / 3_600_000) % 24) as u32,
+                ((ms / 60_000) % 60) as u32,
+                ms,
+            )
         };
         let next_minute = ((now_ms / 60_000) + 1) * 60_000;
         let (body, media) = if html {
@@ -112,7 +113,9 @@ fn clock_now() -> FnEndpoint {
             // (text/html) for the blinking nav clock; default is plain HH:MM.
             .input(
                 ArgSpec::new("html")
-                    .summary("html=true wraps the colon in a span for the nav (default: plain HH:MM)")
+                    .summary(
+                        "html=true wraps the colon in a span for the nav (default: plain HH:MM)",
+                    )
                     .optional(),
             )
             .output("text/plain;charset=utf-8"),
@@ -884,7 +887,9 @@ mod shacl_module {
                 shapes_arg.to_string()
             } else {
                 let iri = Iri::parse(shapes_arg).map_err(|e| {
-                    Error::Endpoint(format!("urn:shacl:validate: bad shapes IRI `{shapes_arg}`: {e}"))
+                    Error::Endpoint(format!(
+                        "urn:shacl:validate: bad shapes IRI `{shapes_arg}`: {e}"
+                    ))
                 })?;
                 String::from_utf8(inv.source(&iri).await?.bytes).map_err(|e| {
                     Error::Endpoint(format!("urn:shacl:validate: shapes not UTF-8: {e}"))
@@ -896,10 +901,11 @@ mod shacl_module {
             } else {
                 "text/turtle"
             };
-            Ok(
-                Representation::new(ReprType::new(media).with_param("charset", "utf-8"), body.into_bytes())
-                    .cacheable(),
+            Ok(Representation::new(
+                ReprType::new(media).with_param("charset", "utf-8"),
+                body.into_bytes(),
             )
+            .cacheable())
         }
 
         fn name(&self) -> &str {
@@ -916,11 +922,14 @@ mod shacl_module {
                 .verb(Verb::Source)
                 .verb(Verb::Meta)
                 .input(
-                    ArgSpec::new("data").summary("the RDF data graph to validate — usually piped in"),
+                    ArgSpec::new("data")
+                        .summary("the RDF data graph to validate — usually piped in"),
                 )
-                .input(ArgSpec::new("shapes").summary(
-                    "the SHACL shapes graph: inline Turtle or a resolvable resource IRI",
-                ))
+                .input(
+                    ArgSpec::new("shapes").summary(
+                        "the SHACL shapes graph: inline Turtle or a resolvable resource IRI",
+                    ),
+                )
                 .input(ArgSpec::new("as").summary(
                     "report representation: text/turtle (default, the report graph) or \
                      application/json",
@@ -1154,8 +1163,14 @@ impl ikigai_core::SchedulerReporter for WasmSpawner {
         vec![
             ("backend".to_string(), "browser · event loop".to_string()),
             ("threads".to_string(), "1".to_string()),
-            ("active".to_string(), self.counters.active.load(SeqCst).to_string()),
-            ("spawned".to_string(), self.counters.spawned.load(SeqCst).to_string()),
+            (
+                "active".to_string(),
+                self.counters.active.load(SeqCst).to_string(),
+            ),
+            (
+                "spawned".to_string(),
+                self.counters.spawned.load(SeqCst).to_string(),
+            ),
             (
                 "completed".to_string(),
                 self.counters.completed.load(SeqCst).to_string(),
@@ -1297,11 +1312,17 @@ impl ikigai_time::TimerBackend for IntervalTimer {
         let ms = interval.as_millis() as i32;
         let id = if recurring {
             window
-                .set_interval_with_callback_and_timeout_and_arguments_0(cb.as_ref().unchecked_ref(), ms)
+                .set_interval_with_callback_and_timeout_and_arguments_0(
+                    cb.as_ref().unchecked_ref(),
+                    ms,
+                )
                 .expect("setInterval")
         } else {
             window
-                .set_timeout_with_callback_and_timeout_and_arguments_0(cb.as_ref().unchecked_ref(), ms)
+                .set_timeout_with_callback_and_timeout_and_arguments_0(
+                    cb.as_ref().unchecked_ref(),
+                    ms,
+                )
                 .expect("setTimeout")
         };
         TIMERS.with(|t| {
