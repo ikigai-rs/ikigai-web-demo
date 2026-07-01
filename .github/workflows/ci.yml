@@ -1,0 +1,34 @@
+# PR + push CI for the web-demo. The Pages deploy (pages.yml) only builds the
+# wasm LIB, so nothing there compiles the native `ikigai-net-server` bin — a
+# published-dep bump can silently desync it and sit red for days. `cargo check
+# --all-targets` closes that blind spot; fmt + clippy keep the style debt from
+# creeping back now that we've paid it down.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+
+      - name: fmt
+        run: cargo fmt --all -- --check
+
+      # The deployed artifact: the wasm lib must be lint-clean.
+      - name: clippy (wasm lib)
+        run: cargo clippy --lib --target wasm32-unknown-unknown -- -D warnings
+
+      # The blind spot: native lib + the ikigai-net-server bin + tests. This is
+      # the target set that would have caught the server.rs capability drift.
+      - name: clippy (native, all targets)
+        run: cargo clippy --all-targets -- -D warnings
