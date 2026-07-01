@@ -1103,25 +1103,64 @@ pub fn build_kernel(nature: &'static str) -> Kernel {
         .with_subclass_axioms(ikigai_rdf::subclass_axioms(ikigai_runbook::ALIGNMENT_TTL))
 }
 
+/// Live task counters behind the browser's scheduler readout — the wasm analogue of the
+/// native pool's counters. Single-threaded (the JS event loop), but `AtomicU64` keeps the
+/// spawner `Send + Sync` as the `Spawner` trait requires.
+#[cfg(target_family = "wasm")]
+#[derive(Default)]
+struct WasmSchedCounters {
+    spawned: std::sync::atomic::AtomicU64,
+    active: std::sync::atomic::AtomicU64,
+    completed: std::sync::atomic::AtomicU64,
+}
+
 /// The browser's [`Spawner`](ikigai_core::Spawner): runs each fanned-out task on the
 /// JS event loop via `spawn_local`, so re-entrant compose fan-out and engine fork/map
 /// run **concurrently** in the tab (not sequentially). The task is `!Send` here (the
 /// wasm `BoxFuture` drops the bound), which is exactly why ikigai-core relaxes `Send`
-/// on wasm32. A oneshot bridges completion back so the joiner can park on it.
+/// on wasm32. A oneshot bridges completion back so the joiner can park on it. It also
+/// counts tasks and reports them via [`SchedulerReporter`](ikigai_core::SchedulerReporter)
+/// so `urn:kernel:scheduler` moves in the browser like the native pool does.
 #[cfg(target_family = "wasm")]
-struct WasmSpawner;
+#[derive(Default)]
+struct WasmSpawner {
+    counters: Arc<WasmSchedCounters>,
+}
 
 #[cfg(target_family = "wasm")]
 impl ikigai_core::Spawner for WasmSpawner {
     fn spawn(&self, task: ikigai_core::BoxFuture<()>) -> ikigai_core::BoxFuture<()> {
+        use std::sync::atomic::Ordering::SeqCst;
+        let counters = Arc::clone(&self.counters);
+        counters.spawned.fetch_add(1, SeqCst);
+        counters.active.fetch_add(1, SeqCst);
         let (tx, rx) = futures::channel::oneshot::channel();
         wasm_bindgen_futures::spawn_local(async move {
             task.await;
+            counters.active.fetch_sub(1, SeqCst);
+            counters.completed.fetch_add(1, SeqCst);
             let _ = tx.send(());
         });
         Box::pin(async move {
             let _ = rx.await;
         })
+    }
+}
+
+#[cfg(target_family = "wasm")]
+impl ikigai_core::SchedulerReporter for WasmSpawner {
+    fn rows(&self) -> Vec<(String, String)> {
+        use std::sync::atomic::Ordering::SeqCst;
+        vec![
+            ("backend".to_string(), "browser · event loop".to_string()),
+            ("threads".to_string(), "1".to_string()),
+            ("active".to_string(), self.counters.active.load(SeqCst).to_string()),
+            ("spawned".to_string(), self.counters.spawned.load(SeqCst).to_string()),
+            (
+                "completed".to_string(),
+                self.counters.completed.load(SeqCst).to_string(),
+            ),
+        ]
     }
 }
 
@@ -1316,8 +1355,16 @@ thread_local! {
         // engine's fork/map — so `( a ; b )`, `..`, and compose's markers run
         // concurrently instead of sequentially. (The native server target builds this
         // lib unscheduled; it never touches this thread-local.)
+        // One shared spawner drives the kernel's compose fan-out AND the engine's
+        // fork/map, and reports its task counts so urn:kernel:scheduler moves in the tab.
         #[cfg(target_family = "wasm")]
-        let kernel = build_kernel("Embedded (Browser)").into_scheduled(Arc::new(WasmSpawner));
+        let spawner = Arc::new(WasmSpawner::default());
+        #[cfg(target_family = "wasm")]
+        let kernel = build_kernel("Embedded (Browser)")
+            .with_scheduler_reporter(
+                Arc::clone(&spawner) as Arc<dyn ikigai_core::SchedulerReporter>
+            )
+            .into_scheduled(Arc::clone(&spawner) as Arc<dyn ikigai_core::Spawner>);
         #[cfg(not(target_family = "wasm"))]
         let kernel = Arc::new(build_kernel("Embedded (Browser)"));
         // Stash a Resolver handle to the same kernel for the module callback path before
@@ -1349,7 +1396,7 @@ thread_local! {
         }
         let engine = ikigai_engine::Engine::new(kernel);
         #[cfg(target_family = "wasm")]
-        let engine = engine.with_spawner(Arc::new(WasmSpawner));
+        let engine = engine.with_spawner(Arc::clone(&spawner) as Arc<dyn ikigai_core::Spawner>);
         // Friendly capability profiles, so the in-page terminal reads like the
         // desktop CLI: `cap read-only` attenuates the session to a *read* scope on
         // the file module's jail root (`ws`). The session starts at root identity,
