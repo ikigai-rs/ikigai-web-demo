@@ -21,7 +21,7 @@ path = "src/bin/server.rs"
 ikigai-core = "0.1.32"  # urn:kernel:actions self-describes (Selection demo routes types=)
 # The reusable function library, linked in as a published module crate.
 # Compiled to wasm32 alongside this lib — the in-browser proof of module linkage.
-ikigai-fn = "0.1.0"
+ikigai-fn = "0.1.2" # + urn:fn:conditional (the lazy branch: if/then/else are URIs)
 # The capability-gated file module, here on its wasm32 localStorage backend — the
 # browser proof that the same module serves files natively and in the page.
 ikigai-fs = "0.1.2"  # cacheable file Source (FileEndpoint::cacheable) for the golden thread
@@ -45,7 +45,7 @@ ikigai-module = "0.1.7"  # with_endpoint(): lazy modules enumerate into the cata
 ikigai-http = "0.1.1"
 # Interactive runbook module (urn:runbook:*) — same module the CLI links; local path
 # during dev, publish/git when stable (like engine/resolve).
-ikigai-runbook = "0.1.9"  # SHACL demo tab (validate + dogfood)
+ikigai-runbook = "0.1.10"  # Basics: urn:fn:conditional branch (lazy) example
 # RDF transreption module (urn:rdf:transrept) from the ikigai-linkeddata workspace —
 # parses an RDF syntax and re-serializes to another (or to an HTML table), client-side
 # in wasm. The catalog + FOAF render to HTML through this. (SPARQL deferred to a later
