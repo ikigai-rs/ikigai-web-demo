@@ -29,8 +29,8 @@ ikigai-vocab = "0.1"
 # The CLI's renderer-agnostic Engine — drives the in-page terminal — and its Resolver
 # seam. 0.1.4 is the async API (eval_async / issue_as_async) that lets the in-page
 # terminal drive the kernel on the JS event loop (M2).
-ikigai-engine = "0.1.7"  # pipe fills the sole required input (JSON-LD demo's content+base pipes)
-ikigai-resolve = "0.1.6"  # is_cached carries &Capability
+ikigai-engine = "0.1.9"  # quote-aware named args (title="two words") + pipe input routing
+ikigai-resolve = "0.1.9"  # is_cached carries &Capability
 # The on-wire Call/Reply protocol — the WASM codec (network demo) speaks it in the
 # browser, and the server speaks it on the other end. Same bytes as ikigai-ipc/quic.
 # Also reused for the module-session codec (encode/decode of ModuleCall/ModuleReply).
@@ -86,7 +86,7 @@ ikigai-shacl = "0.1.0"
 # The time transport — only the browser drives it here (the native server doesn't
 # need timed jobs). Its native ThreadTimer is cfg'd out on wasm; this lib supplies a
 # `setInterval`-backed TimerBackend instead.
-ikigai-time = "0.1.10"  # persistent jobs (clock) + cancel target=<iri> (greeter Stop)
+ikigai-time = "0.1.11"  # persistent jobs (clock) + cancel target=<iri> (greeter Stop)
 web-sys = { version = "0.3", features = [
     "Window", "EventTarget", "StorageEvent",
     "Request", "RequestInit", "Response", "Headers",
