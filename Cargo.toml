@@ -32,7 +32,11 @@ ikigai-vocab = "0.1"
 # The CLI's renderer-agnostic Engine — drives the in-page terminal — and its Resolver
 # seam. 0.1.4 is the async API (eval_async / issue_as_async) that lets the in-page
 # terminal drive the kernel on the JS event loop (M2).
-ikigai-engine = "0.1.9"  # quote-aware named args (title="two words") + pipe input routing
+ikigai-engine = "0.1.13"  # the structured-Error migration. 0.1.9 was the newest published
+                          # version for a month and does not compile against a current
+                          # ikigai-core; engine skipped 0.1.10-0.1.12, so 0.1.13 is at once
+                          # the fix and the true minimum. (0.1.9 gave the older need:
+                          # quote-aware named args — title="two words" — + pipe routing.)
 ikigai-resolve = "0.1.13"  # SpanCollector + issue_traced_as (the server answers
                            # Call::IssueTraced). Not 0.1.10, which has both: this crate
                            # skipped 0.1.11/0.1.12, so 0.1.13 is the lowest PUBLISHED
@@ -45,7 +49,11 @@ ikigai-wire = "0.1.10"  # wire v7: WireError + Reply::ErrorTyped (a failure cros
 # The dynamically-loadable module format. The host mounts the lazy XSLT module as a generic
 # WasmModuleSpace and services its HostCalls with serve_host_call; the session protocol + the
 # provenance sink live in the crate (the module runs run_session in its own wasm).
-ikigai-module = "0.1.7"  # with_endpoint(): lazy modules enumerate into the catalog
+ikigai-module = "0.1.8"  # SpaceEntry::new — 0.1.7 built the struct literally and so lost
+                         # the `origin` field ikigai-core 0.1.46 added; 0.1.8 is the only
+                         # version above it, so it is the fix and the minimum both.
+                         # (0.1.7 gave with_endpoint(): lazy modules enumerate into the
+                         # catalog.)
 # Outbound HTTP-client module (urn:httpGet…). Already async + executor-agnostic
 # (HttpTransport seam), so the browser supplies a `fetch`-backed transport — same
 # module the native CLI drives with ureq. Unchanged for M2, so straight from crates.io.
