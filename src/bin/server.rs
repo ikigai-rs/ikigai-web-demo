@@ -15,8 +15,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use ikigai_core::{Capability, Kernel};
-use ikigai_resolve::Resolver;
-use ikigai_wire::{decode, encode, Call, Reply};
+use ikigai_resolve::{Resolver, SpanCollector};
+use ikigai_wire::{decode, encode, Call, Reply, WireError};
 use tokio::io::AsyncReadExt;
 use wtransport::endpoint::IncomingSession;
 use wtransport::{Endpoint, Identity, ServerConfig};
@@ -88,9 +88,13 @@ async fn serve(
 /// and encode the `Reply`. The stream boundary frames the message.
 fn dispatch(kernel: &Kernel, bytes: &[u8]) -> Vec<u8> {
     let reply = match decode::<Call>(bytes) {
+        // Failures go back as `ErrorTyped`, not the flat `Error(String)`: the wire
+        // taxonomy is what lets the client keep a remote `Denied` permanent and a
+        // remote `Timeout` transient. Same choice ikigai-ipc/ikigai-quic make, so all
+        // three transports answer a failure identically.
         Ok(Call::Issue(request)) => match Resolver::issue(kernel, request) {
             Ok((representation, status)) => Reply::Resolved(representation, status),
-            Err(e) => Reply::Error(e),
+            Err(e) => Reply::ErrorTyped(WireError::from(&e)),
         },
         // Capability-on-the-wire. This demo server authenticates no client principal
         // (self-signed cert, no client auth), so its effective entitlement is root and
@@ -100,7 +104,20 @@ fn dispatch(kernel: &Kernel, bytes: &[u8]) -> Vec<u8> {
         Ok(Call::IssueAs(request, capability)) => {
             match Resolver::issue_as(kernel, request, &capability) {
                 Ok((representation, status)) => Reply::Resolved(representation, status),
-                Err(e) => Reply::Error(e),
+                Err(e) => Reply::ErrorTyped(WireError::from(&e)),
+            }
+        }
+        // Trace-over-the-wire: resolve with a PER-CALL collector so concurrent traced
+        // calls can't interleave, and ship the recorded spans back with the answer.
+        // `_ctx.parent_span` would re-parent this subtree under a caller's span when a
+        // mount stitches two kernels; a bare `--connect` trace has no parent to adopt.
+        Ok(Call::IssueTraced(request, capability, _ctx)) => {
+            let collector = Arc::new(SpanCollector::default());
+            match ikigai_resolve::issue_traced_as(kernel, request, &capability, collector.clone()) {
+                Ok((representation, status)) => {
+                    Reply::ResolvedTraced(representation, status, collector.take())
+                }
+                Err(e) => Reply::ErrorTyped(WireError::from(&e)),
             }
         }
         // Trusted in-process path (like `issue` above, which resolves under root), so
