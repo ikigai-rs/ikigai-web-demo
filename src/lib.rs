@@ -1535,6 +1535,12 @@ pub fn host_call(reply: Vec<u8>) -> js_sys::Promise {
                 .issue_as_async(request, &capability)
                 .await
                 .map(|(representation, _status)| representation)
+                // The module session protocol still carries failures as a flat String
+                // (`ModuleReply::Error`), so the kernel's structured `Error` flattens
+                // here. The taxonomy is lost at the module boundary — the module only
+                // ever renders this text — until the session protocol grows a typed
+                // failure the way the wire's `ErrorTyped` did.
+                .map_err(|e| e.to_string())
         })
         .await;
         Ok(js_sys::Uint8Array::from(&bytes[..]).into())
@@ -1620,25 +1626,37 @@ pub fn encode_entries() -> Vec<u8> {
     ikigai_wire::encode(&ikigai_wire::Call::Entries).expect("encode call")
 }
 
+/// Render a resolved representation as the terminal's `(kind, text, cache)` triple.
+/// Shared by `Reply::Resolved` and `Reply::ResolvedTraced` — a traced reply is still a
+/// resolution, and the demo shows its answer rather than its spans (the page has no
+/// trace view; the CLI's `--trace` is where those are read).
+fn resolved_to_parts(
+    repr: Representation,
+    status: ikigai_resolve::CacheStatus,
+) -> (&'static str, String, String) {
+    use ikigai_resolve::CacheStatus;
+    let cache = match status {
+        CacheStatus::Hit => "cached",
+        CacheStatus::Miss => "computed",
+        CacheStatus::Uncacheable => "uncacheable",
+    };
+    match String::from_utf8(repr.bytes) {
+        Ok(text) => ("output", text, cache.to_string()),
+        Err(_) => (
+            "error",
+            "reply was not UTF-8 text".to_string(),
+            String::new(),
+        ),
+    }
+}
+
 /// Decode the server's ikigai-wire `Reply` into `{ kind, text, cache }`.
 #[wasm_bindgen(js_name = decodeReply)]
 pub fn decode_reply(bytes: Vec<u8>) -> String {
-    use ikigai_resolve::CacheStatus;
     let (kind, text, cache) = match ikigai_wire::decode::<ikigai_wire::Reply>(&bytes) {
-        Ok(ikigai_wire::Reply::Resolved(repr, status)) => {
-            let cache = match status {
-                CacheStatus::Hit => "cached",
-                CacheStatus::Miss => "computed",
-                CacheStatus::Uncacheable => "uncacheable",
-            };
-            match String::from_utf8(repr.bytes) {
-                Ok(text) => ("output", text, cache.to_string()),
-                Err(_) => (
-                    "error",
-                    "reply was not UTF-8 text".to_string(),
-                    String::new(),
-                ),
-            }
+        Ok(ikigai_wire::Reply::Resolved(repr, status)) => resolved_to_parts(repr, status),
+        Ok(ikigai_wire::Reply::ResolvedTraced(repr, status, _events)) => {
+            resolved_to_parts(repr, status)
         }
         Ok(ikigai_wire::Reply::Cached(hit)) => (
             "output",
@@ -1664,7 +1682,15 @@ pub fn decode_reply(bytes: Vec<u8>) -> String {
         Ok(ikigai_wire::Reply::Entries(None)) => {
             ("output", "(listing unsupported)".to_string(), String::new())
         }
+        // Pre-v7 servers still send the flat variant; it stays decodable forever
+        // (the discriminants are append-only) even though nothing emits it now.
         Ok(ikigai_wire::Reply::Error(e)) => ("error", e, String::new()),
+        // v7: rebuild the server's own `ikigai_core::Error` from the wire taxonomy, so
+        // a remote denial reads "denied: …" in the page exactly as it would locally —
+        // and a caller could tell permanent from transient without parsing prose.
+        Ok(ikigai_wire::Reply::ErrorTyped(wire_error)) => {
+            ("error", Error::from(wire_error).to_string(), String::new())
+        }
         Err(e) => ("error", format!("decode failed: {e}"), String::new()),
     };
     serde_json::json!({ "kind": kind, "text": text, "cache": cache }).to_string()

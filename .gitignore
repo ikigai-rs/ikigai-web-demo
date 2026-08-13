@@ -11,7 +11,12 @@
 !/dist/shacl-loader.js
 /dist/*.wasm
 /dist/*.d.ts
-Cargo.lock
+# Cargo.lock IS committed. This repo is an end product, not a library — it builds a
+# deployed wasm artifact and the ikigai-net-server binary, and is publish = false. While
+# it was lockless every build resolved fresh, so a sibling's publish moved the ground
+# under it with no bisectable moment: on 2026-08-12 four crates published and CI went red
+# on two OTHER crates that had been stranded for weeks (PR #48). Sibling drift is `just
+# drift`'s job, deliberately; it should not arrive inside an unrelated contributor's PR.
 .DS_Store
 *~
 *.swp
