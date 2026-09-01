@@ -1350,7 +1350,9 @@ impl ikigai_time::TimerBackend for IntervalTimer {
 fn time_registry() -> ikigai_time::JobRegistry {
     thread_local! {
         static REGISTRY: ikigai_time::JobRegistry =
-            ikigai_time::JobRegistry::new(Arc::new(IntervalTimer));
+            // The same `Date.now()` clock the kernel gets: ikigai-time stamps a completed
+            // job with it, and the obvious default (`SystemClock`) panics on wasm32.
+            ikigai_time::JobRegistry::new(Arc::new(IntervalTimer), Arc::new(BrowserClock));
     }
     REGISTRY.with(Clone::clone)
 }
