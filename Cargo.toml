@@ -37,10 +37,12 @@ ikigai-engine = "0.1.13"  # the structured-Error migration. 0.1.9 was the newest
                           # ikigai-core; engine skipped 0.1.10-0.1.12, so 0.1.13 is at once
                           # the fix and the true minimum. (0.1.9 gave the older need:
                           # quote-aware named args — title="two words" — + pipe routing.)
-ikigai-resolve = "0.1.13"  # SpanCollector + issue_traced_as (the server answers
-                           # Call::IssueTraced). Not 0.1.10, which has both: this crate
-                           # skipped 0.1.11/0.1.12, so 0.1.13 is the lowest PUBLISHED
-                           # version satisfying ikigai-time 0.1.12's `^0.1.11`.
+ikigai-resolve = "0.1.14"  # SpanCollector + issue_traced_as (the server answers
+                           # Call::IssueTraced) — ours since 0.1.10. The pin sits above
+                           # our own need because ikigai-time raises the floor; where that
+                           # floor lands is Cargo's business and Cargo.lock's record, not
+                           # a number restated here (the last restatement went false the
+                           # moment ikigai-time was bumped).
 # The on-wire Call/Reply protocol — the WASM codec (network demo) speaks it in the
 # browser, and the server speaks it on the other end. Same bytes as ikigai-ipc/quic.
 # Also reused for the module-session codec (encode/decode of ModuleCall/ModuleReply).
@@ -101,7 +103,13 @@ ikigai-shacl = "0.1.0"
 # The time transport — only the browser drives it here (the native server doesn't
 # need timed jobs). Its native ThreadTimer is cfg'd out on wasm; this lib supplies a
 # `setInterval`-backed TimerBackend instead.
-ikigai-time = "0.1.12"  # persistent jobs (clock) + cancel target=<iri> (greeter Stop)
+ikigai-time = "0.2.0"  # the wasm fix: a completed job is stamped from the kernel's
+                       # injected Clock, not `std::time::Instant::now()` — which compiles on
+                       # wasm32 and PANICS at runtime, and did so while holding the registry
+                       # lock, so every later `urn:time:*` read died `cannot recursively
+                       # acquire mutex` and took the whole Control panel with it. Source-
+                       # breaking: `JobRegistry::new` now requires the clock. (0.1.12 gave the
+                       # older need: persistent jobs + cancel target=<iri> for the greeter Stop.)
 web-sys = { version = "0.3", features = [
     "Window", "EventTarget", "StorageEvent",
     "Request", "RequestInit", "Response", "Headers",
