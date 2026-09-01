@@ -1,0 +1,14 @@
+{
+  "name": "ikigai-web-demo-smoke",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Headless smoke test over the built dist/ — the gate that RUNS the wasm kernel.",
+  "//": "Exact pin, not a caret: this gate blocks a deploy, so the browser driver it runs on is part of the artifact under test. 1.55.1 is the floor (GHSA-7mvr-c777-76hp — earlier versions fetch browsers without verifying the TLS certificate).",
+  "scripts": {
+    "test": "playwright test",
+    "serve": "node serve.js"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1"
+  }
+}

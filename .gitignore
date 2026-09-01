@@ -22,3 +22,12 @@
 *.swp
 *~undo-tree~
 /.claude/
+
+# The smoke gate's own scratch. package.json + package-lock.json ARE committed (npm ci in
+# pages.yml needs the lock, and a deploy gate pinned by a lockfile is a deploy gate that
+# does not move under you); everything below is generated per run.
+/smoke/node_modules
+/smoke/test-results
+/smoke/playwright-report
+/smoke/blob-report
+/smoke/.cache

@@ -3,6 +3,14 @@
 # published-dep bump can silently desync it and sit red for days. `cargo check
 # --all-targets` closes that blind spot; fmt + clippy keep the style debt from
 # creeping back now that we've paid it down.
+#
+# Everything in this file is COMPILE-ONLY, and that is a real ceiling, not a nitpick: on
+# 2026-08-12 a dependency bump landed a `std::time::Instant::now()` on the wasm path, which
+# compiles clean for wasm32-unknown-unknown and panics at runtime. All three checks below
+# stayed green for twenty days while the public demo's Control panel showed a bare header.
+# The gate that would have caught it RUNS the artifact and lives in pages.yml (`smoke`,
+# sitting between build and deploy); its reasoning is written up in smoke/README.md. If you
+# are adding coverage here, check first whether it belongs there instead.
 name: ci
 
 on:

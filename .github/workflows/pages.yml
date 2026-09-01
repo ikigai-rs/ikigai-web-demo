@@ -79,8 +79,86 @@ jobs:
         with:
           path: dist
 
-  deploy:
+      # The same tree, as an ordinary artifact, so the `smoke` job below can RUN it. It
+      # is handed over after the stamp so the smoke gate exercises the exact bytes that
+      # deploy — not a re-build that might differ.
+      - name: Hand dist/ to the smoke gate
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist
+          retention-days: 1
+
+  # The gate that RUNS the wasm instead of only compiling it.
+  #
+  # ci.yml checks fmt, clippy on the wasm lib, and clippy on all native targets. All three
+  # are compile-only, and the failure this exists for is invisible to a compiler:
+  # ikigai-time 0.1.12 stamped completed jobs with `std::time::Instant::now()`, which
+  # compiles clean for wasm32-unknown-unknown and panics at runtime — while holding the
+  # job-registry mutex, so every later `urn:time:*` read died `cannot recursively acquire
+  # mutex`. `urn:time:jobs` is one of three sub-requests `urn:data:control-cards`
+  # composes, so the public demo's Control panel was a bare header from 2026-08-12 to
+  # 2026-09-01 with every check green the whole time.
+  #
+  # It runs on the built artifact rather than in-crate for a reason this workflow makes
+  # plain: the deployed tree also contains ~400 lines of hand-written JS glue in
+  # index.html (the /k/ fetch interception, the htmx adapter) that no Rust test can reach,
+  # and two module wasms built above from `git clone --depth 1` of ikigai-xslt and
+  # ikigai-jsonld — unpinned upstream HEAD, which nothing in this repo compiles. Only a
+  # test over dist/ sees any of that.
+  smoke:
     needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Take the built tree, not the committed one: dist/*.js and dist/*.wasm are
+      # gitignored (CI-generated), so the checkout alone has no kernel to run.
+      - name: Replace dist/ with the artifact that is about to deploy
+        run: rm -rf dist
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: smoke/package-lock.json
+
+      - name: Install smoke deps
+        working-directory: smoke
+        run: npm ci
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('smoke/package-lock.json') }}
+
+      - name: Install Chromium
+        working-directory: smoke
+        run: npx playwright install --with-deps chromium
+
+      - name: Smoke test the built demo
+        working-directory: smoke
+        run: npx playwright test
+
+      # A failure here blocks the deploy, so the trace is the thing that explains why.
+      - name: Upload failure trace
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-failure
+          path: smoke/test-results
+          retention-days: 7
+
+  deploy:
+    # Gated on `smoke`, not just `build`: a tree that compiles but does not RUN never
+    # reaches the public URL.
+    needs: [build, smoke]
     runs-on: ubuntu-latest
     environment:
       name: github-pages
