@@ -26,6 +26,23 @@ concurrency:
   group: pages-${{ github.ref }}
   cancel-in-progress: true
 
+# Pinned upstream module revisions.
+#
+# The two repos below are built FROM SOURCE into the deployed artifact, so cloning their
+# default branch meant whatever landed upstream since the last deploy went onto the public
+# site unreviewed and unbisectable — a change here with no commit here. Neither repo cuts
+# tags or releases, so a commit SHA is the only immutable handle they offer; it is also the
+# stronger one, since a tag can be force-moved and a SHA cannot.
+#
+# Both pins are the HEADs that built every deploy through 2026-09-02, and both correspond to
+# the crates.io 0.1.1 the NATIVE build already locks — so adopting them changed nothing and
+# aligned the wasm modules with their native counterparts.
+#
+# To bump: replace the SHA, push, and let `smoke` vet the result. That is what it is for.
+env:
+  XSLT_REV: 2858fe300df42e06ac0b2b6ca00343e192aaa1f0    # ikigai-xslt 0.1.1
+  JSONLD_REV: 77319cd87d39ac8821b8ec6bab5bd7196c5b88de  # ikigai-jsonld 0.1.1
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -58,9 +75,17 @@ jobs:
       # dist/xslt-loader.js glue. Only the generated .js/.wasm are CI-built. Uses the same
       # wasm32 toolchain + wasm-bindgen-cli@0.2.108 installed above. (ikigai-xslt is its own
       # module now — there is no separate ikigai-xslt-module crate.)
+      # `git fetch --depth 1 <sha>` keeps the shallow clone's cheapness while landing on an
+      # exact revision; GitHub serves a SHA directly, so no full history is pulled. The
+      # rev-parse check after it is belt-and-braces — a bad pin already fails the fetch, but
+      # a silent landing anywhere other than XSLT_REV should stop the build, not deploy.
       - name: Build XSLT module WASM + JS bindings into dist/
         run: |
-          git clone --depth 1 https://github.com/ikigai-rs/ikigai-xslt.git module-src
+          git init -q module-src
+          git -C module-src remote add origin https://github.com/ikigai-rs/ikigai-xslt.git
+          git -C module-src fetch -q --depth 1 origin "$XSLT_REV"
+          git -C module-src checkout -q FETCH_HEAD
+          test "$(git -C module-src rev-parse HEAD)" = "$XSLT_REV"
           cargo build --release --lib --features module \
             --manifest-path module-src/Cargo.toml --target wasm32-unknown-unknown
           wasm-bindgen --target web --out-dir dist \
@@ -71,7 +96,11 @@ jobs:
       # kept out of the host wasm, exactly like XSLT.
       - name: Build JSON-LD module WASM + JS bindings into dist/
         run: |
-          git clone --depth 1 https://github.com/ikigai-rs/ikigai-jsonld.git jsonld-src
+          git init -q jsonld-src
+          git -C jsonld-src remote add origin https://github.com/ikigai-rs/ikigai-jsonld.git
+          git -C jsonld-src fetch -q --depth 1 origin "$JSONLD_REV"
+          git -C jsonld-src checkout -q FETCH_HEAD
+          test "$(git -C jsonld-src rev-parse HEAD)" = "$JSONLD_REV"
           cargo build --release --lib --features module \
             --manifest-path jsonld-src/Cargo.toml --target wasm32-unknown-unknown
           wasm-bindgen --target web --out-dir dist \
@@ -112,9 +141,10 @@ jobs:
   # It runs on the built artifact rather than in-crate for a reason this workflow makes
   # plain: the deployed tree also contains ~400 lines of hand-written JS glue in
   # index.html (the /k/ fetch interception, the htmx adapter) that no Rust test can reach,
-  # and two module wasms built above from `git clone --depth 1` of ikigai-xslt and
-  # ikigai-jsonld — unpinned upstream HEAD, which nothing in this repo compiles. Only a
-  # test over dist/ sees any of that.
+  # and two module wasms built above from pinned revisions of ikigai-xslt and
+  # ikigai-jsonld, which nothing in this repo compiles or lints. Only a test over dist/ sees
+  # any of that. (Those revisions were unpinned upstream HEAD until 2026-09-02; pinning
+  # makes a module change deliberate, and this job is what vets the bump.)
   smoke:
     needs: build
     runs-on: ubuntu-latest
