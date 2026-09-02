@@ -9,8 +9,10 @@
 # compiles clean for wasm32-unknown-unknown and panics at runtime. All three checks below
 # stayed green for twenty days while the public demo's Control panel showed a bare header.
 # The gate that would have caught it RUNS the artifact and lives in pages.yml (`smoke`,
-# sitting between build and deploy); its reasoning is written up in smoke/README.md. If you
-# are adding coverage here, check first whether it belongs there instead.
+# sitting between build and deploy, and running on pull requests too — that workflow only
+# withholds the deploy step from a PR, not the checks); its reasoning is written up in
+# smoke/README.md. If you are adding coverage here, check first whether it belongs there
+# instead: anything that has to EXECUTE does.
 name: ci
 
 on:

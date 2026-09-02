@@ -64,12 +64,19 @@ In `pages.yml`, as a `smoke` job between `build` and `deploy`. `build` hands ove
 stamped `dist/` it is about to publish, and `deploy` is `needs: [build, smoke]` — so a tree
 that compiles but does not run never reaches the public URL.
 
+That workflow runs on **pull requests too**, with `deploy` guarded by
+`if: github.event_name != 'pull_request'`. So a PR builds and smoke-tests without
+publishing, and the gate blocks the *merge*, not just the deploy. It costs a wasm build and
+the two module clones per PR; a gate that first executes after merge would report a broken
+demo rather than prevent one, which is precisely the twenty days above.
+
 Running it there, rather than as an in-crate `wasm-bindgen-test`, buys coverage a Rust test
 cannot have: `dist/index.html` carries ~400 lines of hand-written glue (the `/k/` fetch
 interception, the htmx adapter, the passkey bridge) that no Rust test can reach, and
 `pages.yml` builds two module wasms from `git clone --depth 1` of `ikigai-xslt` and
 `ikigai-jsonld` — unpinned upstream `HEAD` that nothing in this repo compiles or lints.
 
-**Known gap:** this gate runs on push to `main`, so it blocks the *deploy*, not the *merge*.
-Closing that means factoring `build` + `smoke` into a reusable workflow that `ci.yml` also
-calls on `pull_request`. That is a deliberate follow-up, not an oversight.
+**Note on cost:** `build` and `smoke` now run on every PR, duplicating work `ci.yml` does
+not do. If that becomes a drag, the tidy-up is to factor `build` + `smoke` into a reusable
+workflow both files call — same coverage, one definition. It was left as the simpler shape
+until there is a reason to add the indirection.

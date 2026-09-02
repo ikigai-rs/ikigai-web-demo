@@ -1,11 +1,18 @@
-name: Deploy demo to GitHub Pages
+name: Build, smoke and deploy the demo
 
 # Rebuild and redeploy the WASM demo whenever it changes. (To pick up a new
 # release of an upstream ikigai crate, bump its version in Cargo.toml and push —
 # that's a change here, so it redeploys.) Also runnable on demand.
+#
+# It ALSO runs on pull requests, without deploying. The `smoke` job below is the only
+# gate that runs the wasm rather than compiling it, and a gate that first executes after
+# merge is a gate that reports a broken demo instead of preventing one — which is exactly
+# the twenty days of August this repo already spent. Running here on PRs costs a wasm
+# build plus the two module clones per PR and buys the check BEFORE the merge, not after.
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 # Let Pages read the deployment token; one deploy at a time.
@@ -13,8 +20,10 @@ permissions:
   contents: read
   pages: write
   id-token: write
+# Keyed by ref, so concurrent PRs don't cancel each other — and main still serializes into
+# one group, the single-deploy-at-a-time behaviour Pages needs.
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -159,6 +168,8 @@ jobs:
     # Gated on `smoke`, not just `build`: a tree that compiles but does not RUN never
     # reaches the public URL.
     needs: [build, smoke]
+    # A pull request builds and smoke-tests; only main publishes.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
