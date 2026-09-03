@@ -213,10 +213,13 @@ test('the Demo tab strip withdraws Lisp and keeps the tabs this kernel serves', 
 test('the passkey ceremony asks the authenticator, and can still register', async ({ page }) => {
   /** @type {string[]} */ const unexpected = [];
   page.on('pageerror', (err) => unexpected.push(`pageerror: ${err.message}`));
-  // The recovery path asks before minting a passkey, because a dismissed prompt and an
-  // empty authenticator are the same NotAllowedError. Accepting it here is the user
-  // saying yes.
-  page.on('dialog', (d) => d.accept());
+  // Nothing here should ever open a browser dialog: the recovery is an in-page affordance,
+  // precisely so registration starts from its own click. Playwright dismisses dialogs by
+  // default, so a regression to `confirm()` would fail below rather than hang — but say so.
+  page.on('dialog', (d) => {
+    unexpected.push(`unexpected dialog: ${d.message()}`);
+    return d.dismiss();
+  });
 
   // Installed before any page script runs, so the bridge only ever sees the stub.
   await page.addInitScript(() => {
@@ -254,8 +257,23 @@ test('the passkey ceremony asks the authenticator, and can still register', asyn
   await toolbar.getByRole('button', { name: 'Demo', exact: true }).click();
   await page.getByRole('tab', { name: 'Identity', exact: true }).click();
 
-  // --- Fresh profile: probe, find nothing, REGISTER -------------------------
+  // --- Fresh profile: probe, find nothing, OFFER registration ---------------
   await page.locator('#ik-login').click();
+
+  // No passkey exists, so the page must not be signed in and must not have registered
+  // one behind the visitor's back — it offers.
+  await expect(page.locator('#ik-register')).toBeVisible();
+  await expect(page.locator('#ik-logout')).toHaveCount(0);
+  expect(
+    await page.evaluate(() => window.__pkCalls.map((c) => c.op)),
+    'the probe alone must not mint a credential',
+  ).toEqual(['get']);
+
+  // WebKit gates a WebAuthn ceremony on user activation and `get()` consumes it, so
+  // registration has to start from its OWN click — chaining it onto the failed probe is
+  // what would refuse in Safari, the browser this bug was reported from.
+  await page.locator('#ik-register').click();
+
   // Signed in: the affordance flips and the segment walkthrough appears, so the ceremony
   // ran all the way through `sink urn:host:login` and not merely up to the stub.
   await expect(page.locator('#ik-logout')).toBeVisible();
@@ -264,7 +282,7 @@ test('the passkey ceremony asks the authenticator, and can still register', asyn
   const fresh = await page.evaluate(() => window.__pkCalls);
   expect(
     fresh.map((c) => c.op),
-    'a fresh profile probes the authenticator once, finds nothing, and registers',
+    'a fresh profile probes the authenticator, finds nothing, then registers on request',
   ).toEqual(['get', 'create']);
 
   // THE REGRESSION. `allowCredentials` is what named a credential the authenticator might

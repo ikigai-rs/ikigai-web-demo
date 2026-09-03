@@ -46,11 +46,16 @@ nothing ever removed the key — so a browser without that passkey was pinned fo
 branch that could not succeed, with registration unreachable (observed in Safari). A
 WebAuthn ceremony cannot complete headlessly, so the test stubs `navigator.credentials` and
 asserts on the **branch taken and the options asked for**: a fresh profile probes, finds
-nothing, and registers a *discoverable* credential (`residentKey: required`, platform
-attachment); an authenticator that already holds one signs in with it and mints nothing
-new; `get()` never carries `allowCredentials`; and no credential id is cached. It checks
-the mechanism only — what the Identity tab *means* (serverless identity
-selection/derivation, not authenticated login) is unchanged.
+nothing, and *offers* registration rather than minting a credential unasked; the offered
+affordance registers a **discoverable** credential (`residentKey: required`, platform
+attachment) and ends signed in; an authenticator that already holds one signs in with it
+and mints nothing new; `get()` never carries `allowCredentials`; and no credential id is
+cached. Registration is a second, separate click on purpose — WebKit gates a WebAuthn
+ceremony on user activation and `get()` consumes it, so chaining `create()` onto the failed
+probe is what would be refused in Safari, the browser the bug was reported from. The test
+also fails on any browser dialog, since the recovery is in-page by design. It checks the
+mechanism only — what the Identity tab *means* (serverless identity selection/derivation,
+not authenticated login) is unchanged.
 
 ## It was verified against the actual bug
 
@@ -66,11 +71,12 @@ console hygiene are what failed.
 
 The two later tests were replayed the same way, against the pre-fix `src/lib.rs` and
 `dist/index.html` rebuilt for wasm32: the strip test fails on `Lisp` (`toHaveCount` 0
-expected, 1 received) and the passkey test fails because the fresh-profile call sequence is
-`['create']` instead of `['get', 'create']` — the old bridge never asked the authenticator
-anything, it read `localStorage`. (Had it got past that, the cached-id and
-returning-visitor `allowCredentials` assertions fail on that build too; the dead end is
-what they pin.) Neither passes against the bug it exists for.
+expected, 1 received), and the passkey test fails at the recovery affordance — the old
+bridge never asked the authenticator anything, it read `localStorage` and registered
+straight away, so `#ik-register` does not exist. (The assertions that pin the dead end
+itself — no cached credential id, and a returning visitor's `get()` carrying no
+`allowCredentials` — fail on that build too, further down.) Neither passes against the bug
+it exists for.
 
 ## Running it locally
 

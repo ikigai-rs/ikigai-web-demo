@@ -100,6 +100,10 @@
   .ik-id-link { color: #1f7199; cursor: pointer; text-decoration: none; font-weight: 600; }
   .ik-id-link:hover { text-decoration: underline; }
   .ik-id-hint { color: #888; font-size: 13px; }
+  /* A link INSIDE the hint (the passkey recovery affordance) is underlined: against
+     the hint's #888 it clears AA on white on its own (5.4:1) but the two colors are
+     only 1.5:1 apart, so color alone would not distinguish it from the sentence. */
+  .ik-id-hint .ik-id-link { text-decoration: underline; }
   .ik-try { margin: -8px 0 18px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   .ik-try .ik-try-label { color: #777; font-size: 13px; }
   .ik-try button { background: #f3f6f9; color: #1f7199; border: 1px solid #ccd6dd; border-radius: 6px; padding: 4px 10px; font: 12.5px ui-monospace, Menlo, monospace; cursor: pointer; }
@@ -311,8 +315,8 @@ async function assertExistingPasskey() {
   } catch (err) {
     // NotAllowedError is what a browser reports both for "nothing to assert against" and
     // for "the user dismissed the sheet"; the spec deliberately does not distinguish them,
-    // so neither can we. Treat it as "no usable credential" and let the caller ASK before
-    // registering, rather than ambushing someone who just cancelled with a second dialog.
+    // so neither can we. Treat it as "no usable credential" and let the caller OFFER
+    // registration (see `offerRegistration`) instead of starting a second ceremony here.
     if (err && err.name === 'NotAllowedError') return null;
     throw err;
   }
@@ -343,31 +347,59 @@ async function registerPasskey() {
 // SHA-256 of it gives a stable per-passkey client id that keys the workspace segment.
 // The browser is the passkey "minter": it turns the id into the fs scopes and logs in
 // via the resource. (A QUIC server's minter would derive scopes from the client cert.)
-async function passkeyLogin() {
-  let rawId = await assertExistingPasskey();
-  if (!rawId) {
-    // The recovery path the old code had no way to reach. Explicit, because the failure
-    // above is ambiguous: a dismissed prompt looks exactly like an empty authenticator.
-    const create = confirm(
-      'No passkey for this demo was found in this browser (or the prompt was dismissed).\n\n' +
-        'Create one now?',
-    );
-    if (!create) return;
-    rawId = await registerPasskey();
-  }
+async function completeLogin(rawId) {
   const id = (await clientIdFromRawId(rawId)).replace(/[^a-z0-9]/g, '');
   const scopes = `urn:cap:fs:read:ws/${id} urn:cap:fs:write:ws/${id} urn:cap:fs:delete:ws/${id}`;
   await evalLineAsync(`sink urn:host:login ${scopes}`); // login as a resource
   await reloadIdentityTab();
 }
 
+// The recovery path the old code had no way to reach: put a REGISTER affordance next to
+// the sign-in link and stop, rather than chaining `create()` onto the failed probe.
+//
+// Two reasons it is a second click and not an automatic follow-on. WebKit gates a WebAuthn
+// ceremony on user activation, and `get()` consumes the activation that opened it — so a
+// `create()` issued after that await (or after a `confirm()`) can be refused for having no
+// gesture behind it, which would re-break this exact path in the exact browser the bug was
+// reported from. And the failure is ambiguous anyway: `NotAllowedError` is what a browser
+// reports both for an empty authenticator and for a dismissed prompt, so someone who just
+// cancelled should not be handed a second modal unasked.
+function offerRegistration() {
+  const nav = document.querySelector('.rb-panel .ik-id');
+  if (!nav) return;
+  nav.innerHTML =
+    '<a href="#" id="ik-login" class="ik-id-link">\u{1F511} Sign in with a passkey</a> ' +
+    '<span class="ik-id-hint" role="status">— no passkey for this demo was found in this ' +
+    'browser (or the prompt was dismissed). <a href="#" id="ik-register" class="ik-id-link">' +
+    'Create one</a></span>';
+}
+
+// Serverless WebAuthn: no relying party to verify the assertion, so this is identity
+// *selection/derivation*, not authenticated login. The credential's id is stable, so a
+// SHA-256 of it gives a stable per-passkey client id that keys the workspace segment.
+// The browser is the passkey "minter": it turns the id into the fs scopes and logs in
+// via the resource. (A QUIC server's minter would derive scopes from the client cert.)
+async function passkeyLogin() {
+  const rawId = await assertExistingPasskey();
+  if (!rawId) {
+    offerRegistration();
+    return;
+  }
+  await completeLogin(rawId);
+}
+
 document.body.addEventListener('click', async (e) => {
-  const link = e.target.closest('#ik-login, #ik-logout');
+  const link = e.target.closest('#ik-login, #ik-register, #ik-logout');
   if (!link) return;
   e.preventDefault();
   if (link.id === 'ik-login') {
     try { await passkeyLogin(); }
     catch (err) { alert('passkey sign-in failed or was cancelled:\n' + err); }
+  } else if (link.id === 'ik-register') {
+    // Straight into `create()` with no await ahead of it, so the click's user activation
+    // is still live when the ceremony starts.
+    try { await completeLogin(await registerPasskey()); }
+    catch (err) { alert('creating a passkey failed or was cancelled:\n' + err); }
   } else {
     await evalLineAsync('sink urn:host:logout');
     await reloadIdentityTab();
