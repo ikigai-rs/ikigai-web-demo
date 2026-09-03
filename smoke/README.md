@@ -13,8 +13,10 @@ runtime — and it panicked while holding the job-registry mutex, so every later
 Control panel of <https://ikigai-rs.github.io/ikigai-web-demo/> showed a header and
 nothing else from **2026-08-12 to 2026-09-01**, with every check green throughout.
 
-This directory holds one Playwright test that loads the built `dist/`, drives the demo the
-way a visitor does, and asserts two things no compiler can:
+This directory holds Playwright tests that load the built `dist/`, drive the demo the way a
+visitor does, and assert things no compiler can.
+
+**The kernel runs** (`the wasm kernel renders the Control plane…`):
 
 1. **The Control plane renders** — three cards (Scheduler · Cache · Time jobs), each with
    content.
@@ -27,6 +29,29 @@ advances is direct evidence the broken path works.
 Console errors are asserted too: none, apart from a capped, pre-existing pair (see the
 comment in `demo.spec.js`).
 
+**The tab strip offers only what this kernel can serve** (`the Demo tab strip withdraws
+Lisp…`): `ikigai-runbook` ships a hardcoded built-in list, so every host got a **Lisp** tab
+whether or not it could serve one. This kernel cannot — it does not link `ikigai-lisp`
+(Steel does not compile to wasm) — so every step in that tab answered `no endpoint resolved
+for urn:lisp:eval` on the public site. `hide_tab("lisp")` withdraws it. The test asserts
+**both** halves: Lisp absent, *and* named tabs still present. Absence alone is weak —
+hiding everything would pass it — and `hide_tab` accepts an unknown id silently, so a typo
+hides nothing and says nothing.
+
+**The passkey ceremony asks the authenticator** (`the passkey ceremony asks the
+authenticator…`): the bridge used to cache the credential id in `localStorage` and branch
+on it, treating that cache as authoritative about what the keychain held. Once written,
+every later sign-in called `get()` with `allowCredentials` naming that one credential, and
+nothing ever removed the key — so a browser without that passkey was pinned forever on a
+branch that could not succeed, with registration unreachable (observed in Safari). A
+WebAuthn ceremony cannot complete headlessly, so the test stubs `navigator.credentials` and
+asserts on the **branch taken and the options asked for**: a fresh profile probes, finds
+nothing, and registers a *discoverable* credential (`residentKey: required`, platform
+attachment); an authenticator that already holds one signs in with it and mints nothing
+new; `get()` never carries `allowCredentials`; and no credential id is cached. It checks
+the mechanism only — what the Identity tab *means* (serverless identity
+selection/derivation, not authenticated login) is unchanged.
+
 ## It was verified against the actual bug
 
 Before this landed, the gate was replayed against a deliberately broken build — `Cargo.toml`
@@ -38,6 +63,14 @@ reproducing the original panic chain verbatim: `time not implemented on this pla
 Worth knowing which assertion caught it: in that replay all three cards still *rendered*,
 frozen at `runs 0`. The card-count check alone would have missed it. The run count and the
 console hygiene are what failed.
+
+The two later tests were replayed the same way, against the pre-fix `src/lib.rs` and
+`dist/index.html` rebuilt for wasm32: the strip test fails on `Lisp` (`toHaveCount` 0
+expected, 1 received) and the passkey test fails because the fresh-profile call sequence is
+`['create']` instead of `['get', 'create']` — the old bridge never asked the authenticator
+anything, it read `localStorage`. (Had it got past that, the cached-id and
+returning-visitor `allowCredentials` assertions fail on that build too; the dead end is
+what they pin.) Neither passes against the bug it exists for.
 
 ## Running it locally
 

@@ -269,14 +269,22 @@ document.body.addEventListener('htmx:beforeRequest', (evt) => {
 // `sink urn:host:login <scopes>` establishes the session identity as a RESOURCE — the
 // same engine command a remote QUIC server's session layer handles — and we re-resolve
 // the Identity tab so the page reflects it (HATEOAS — state lives in the representation).
-const PK_KEY = 'ikigai:passkey:credId';
-const b64urlToBytes = (s) => {
-  s = s.replace(/-/g, '+').replace(/_/g, '/');
-  const bin = atob(s + '='.repeat((4 - (s.length % 4)) % 4));
-  return Uint8Array.from(bin, (c) => c.charCodeAt(0));
-};
-const bytesToB64url = (buf) =>
-  btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+// The passkey is DISCOVERABLE (a resident key on this device's platform authenticator),
+// so the ceremony ASKS the authenticator what it holds instead of TELLING it. `get()`
+// carries no `allowCredentials` and this page records no credential id anywhere.
+//
+// The bug that motivated it: the id used to be cached in localStorage and the cache was
+// treated as authoritative about the keychain — a claim a page can never make. Once that
+// key existed every later sign-in took the assertion branch naming that one credential,
+// and nothing ever removed it. If the passkey was not in THIS authenticator (never
+// synced, deleted, made on another device or another profile) Safari found no local match
+// and offered only QR-code-or-hardware-key, so the browser was pinned forever on a branch
+// that could not succeed and registration became unreachable. The keychain was always the
+// real source of truth; now it is the only one.
+const PK_RP_ID = location.hostname;
+// The key the broken version wrote. Nothing reads it any more; drop it so the state that
+// version left behind does not linger in a returning visitor's browser.
+try { localStorage.removeItem('ikigai:passkey:credId'); } catch (_) { /* private mode */ }
 async function clientIdFromRawId(rawId) {
   const digest = await crypto.subtle.digest('SHA-256', rawId);
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 12);
@@ -286,30 +294,66 @@ async function clientIdFromRawId(rawId) {
 const reloadIdentityTab = () =>
   runKernel('source urn:runbook:identity as=text/html', document.getElementById('runbook'), 'innerHTML');
 
+// Ask the authenticator whether it already holds a passkey for this origin. Returns the
+// credential's rawId, or null when it holds none. No `allowCredentials`: a discoverable
+// credential answers for itself, and the browser shows a picker if there is more than one.
+async function assertExistingPasskey() {
+  try {
+    const assertion = await navigator.credentials.get({ publicKey: {
+      challenge: crypto.getRandomValues(new Uint8Array(32)),
+      rpId: PK_RP_ID,
+      userVerification: 'preferred',
+      // WebAuthn L3 hint: try the passkey on THIS device before offering the hybrid
+      // (QR / nearby-device) flow. Advisory — browsers that don't know it ignore it.
+      hints: ['client-device'],
+    } });
+    return assertion.rawId;
+  } catch (err) {
+    // NotAllowedError is what a browser reports both for "nothing to assert against" and
+    // for "the user dismissed the sheet"; the spec deliberately does not distinguish them,
+    // so neither can we. Treat it as "no usable credential" and let the caller ASK before
+    // registering, rather than ambushing someone who just cancelled with a second dialog.
+    if (err && err.name === 'NotAllowedError') return null;
+    throw err;
+  }
+}
+
+// Mint a discoverable passkey: `residentKey: 'required'` is what makes the credential
+// findable without an id (`requireResidentKey` is the pre-L2 spelling of the same thing,
+// for older authenticators), and `authenticatorAttachment: 'platform'` keeps it on this
+// device's keychain rather than a roaming key.
+async function registerPasskey() {
+  const cred = await navigator.credentials.create({ publicKey: {
+    challenge: crypto.getRandomValues(new Uint8Array(32)),
+    rp: { name: 'ikigai', id: PK_RP_ID },
+    user: { id: crypto.getRandomValues(new Uint8Array(16)), name: 'ikigai-user', displayName: 'ikigai user' },
+    pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
+    authenticatorSelection: {
+      residentKey: 'required',
+      requireResidentKey: true,
+      authenticatorAttachment: 'platform',
+      userVerification: 'preferred',
+    },
+  } });
+  return cred.rawId;
+}
+
 // Serverless WebAuthn: no relying party to verify the assertion, so this is identity
 // *selection/derivation*, not authenticated login. The credential's id is stable, so a
 // SHA-256 of it gives a stable per-passkey client id that keys the workspace segment.
 // The browser is the passkey "minter": it turns the id into the fs scopes and logs in
 // via the resource. (A QUIC server's minter would derive scopes from the client cert.)
 async function passkeyLogin() {
-  const challenge = crypto.getRandomValues(new Uint8Array(32));
-  const stored = localStorage.getItem(PK_KEY);
-  let rawId;
-  if (stored) {
-    const assertion = await navigator.credentials.get({ publicKey: {
-      challenge, rpId: location.hostname, userVerification: 'preferred',
-      allowCredentials: [{ type: 'public-key', id: b64urlToBytes(stored) }],
-    } });
-    rawId = assertion.rawId;
-  } else {
-    const cred = await navigator.credentials.create({ publicKey: {
-      challenge, rp: { name: 'ikigai', id: location.hostname },
-      user: { id: crypto.getRandomValues(new Uint8Array(16)), name: 'ikigai-user', displayName: 'ikigai user' },
-      pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
-      authenticatorSelection: { userVerification: 'preferred' },
-    } });
-    rawId = cred.rawId;
-    localStorage.setItem(PK_KEY, bytesToB64url(rawId));
+  let rawId = await assertExistingPasskey();
+  if (!rawId) {
+    // The recovery path the old code had no way to reach. Explicit, because the failure
+    // above is ambiguous: a dismissed prompt looks exactly like an empty authenticator.
+    const create = confirm(
+      'No passkey for this demo was found in this browser (or the prompt was dismissed).\n\n' +
+        'Create one now?',
+    );
+    if (!create) return;
+    rawId = await registerPasskey();
   }
   const id = (await clientIdFromRawId(rawId)).replace(/[^a-z0-9]/g, '');
   const scopes = `urn:cap:fs:read:ws/${id} urn:cap:fs:write:ws/${id} urn:cap:fs:delete:ws/${id}`;

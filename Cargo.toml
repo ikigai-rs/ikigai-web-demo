@@ -62,7 +62,12 @@ ikigai-module = "0.1.8"  # SpaceEntry::new — 0.1.7 built the struct literally 
 ikigai-http = "0.1.1"
 # Interactive runbook module (urn:runbook:*) — same module the CLI links; local path
 # during dev, publish/git when stable (like engine/resolve).
-ikigai-runbook = "0.1.10"  # Basics: urn:fn:conditional branch (lazy) example
+ikigai-runbook = "0.1.13"  # hide_tab(): the subtractive mirror of add_tab, so a host can
+                           # withdraw a built-in tab it cannot serve. This kernel does not
+                           # link ikigai-lisp (Steel does not go to wasm), so its Lisp tab
+                           # answered "no endpoint resolved for urn:lisp:eval" on every
+                           # step. (0.1.10 gave the older need: the Basics tab's
+                           # urn:fn:conditional branch (lazy) example.)
 # RDF transreption module (urn:rdf:transrept) from the ikigai-linkeddata workspace —
 # parses an RDF syntax and re-serializes to another (or to an HTML table), client-side
 # in wasm. The catalog + FOAF render to HTML through this. (SPARQL deferred to a later

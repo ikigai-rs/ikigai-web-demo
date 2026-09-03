@@ -964,6 +964,17 @@ pub fn build_kernel(nature: &'static str) -> Kernel {
     ikigai_runbook::add_tab("identity", "Identity");
     // The browser-only Timer tab (urn:runbook:timer): start/stop a recurring time job.
     ikigai_runbook::add_tab("timer", "Timer");
+    // Withdraw the built-in Lisp tab: this kernel does not link `ikigai-lisp` (Steel does
+    // not compile to wasm) and never has, so every step in that tab answered `no endpoint
+    // resolved for urn:lisp:eval` — an offer the host cannot honour. `hide_tab` is
+    // presentation only; `urn:runbook:lisp` stays bound and stays resolvable by name.
+    //
+    // `hide_tab` accepts an unknown id silently by design, so a typo here would hide
+    // nothing and say nothing. What catches that is not this line but the smoke gate
+    // (`smoke/demo.spec.js`), which asserts against the strip the built page actually
+    // renders: Lisp absent AND named survivors present — the second half being the part a
+    // "hid everything" regression would fail.
+    ikigai_runbook::hide_tab("lisp");
     // The reusable functions come from the linked `ikigai-fn` module crate
     // (compiled to wasm32 alongside this lib); this host chains its own page
     // shapes, the in-page terminal mount, the greeter, and `urn:host:info`.
