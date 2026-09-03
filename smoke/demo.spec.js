@@ -152,3 +152,174 @@ test('the wasm kernel renders the Control plane and its timed jobs complete', as
       `(more means the /k/ fetch interception stopped intercepting):\n${known404s.join('\n')}`,
   ).toBeLessThanOrEqual(KNOWN_404_MAX);
 });
+
+// ---------------------------------------------------------------------------
+// The runbook tab strip: an offer this kernel can actually honour.
+//
+// `ikigai-runbook` ships a hardcoded list of built-in demos, so every host got a **Lisp**
+// tab whether or not it could serve one. This kernel cannot: it does not link
+// `ikigai-lisp` (Steel does not compile to wasm) and never has, so every step in that tab
+// answered `no endpoint resolved for urn:lisp:eval` on the public demo. `hide_tab("lisp")`
+// (runbook 0.1.13) withdraws it.
+//
+// Absence alone is a weak assertion — hiding *every* tab would also pass it, and
+// `hide_tab` accepts an unknown id silently, so a typo hides nothing and says nothing
+// either. Hence both halves: Lisp gone, and named tabs that must survive still there.
+test('the Demo tab strip withdraws Lisp and keeps the tabs this kernel serves', async ({ page }) => {
+  /** @type {string[]} */ const unexpected = [];
+  page.on('pageerror', (err) => unexpected.push(`pageerror: ${err.message}`));
+
+  await page.goto('/index.html');
+  const toolbar = page.locator('nav.ik-toolbar');
+  await expect(toolbar).toBeVisible();
+  await toolbar.getByRole('button', { name: 'Demo', exact: true }).click();
+
+  // The strip is a real tablist rendered by the kernel, so waiting on a known tab waits
+  // on the whole strip having been swapped in.
+  const strip = page.locator('#runbook nav.rb-tabs');
+  await expect(strip.getByRole('tab', { name: 'Basics', exact: true })).toBeVisible();
+
+  // Gone.
+  await expect(strip.getByRole('tab', { name: 'Lisp', exact: true })).toHaveCount(0);
+
+  // Still here: two built-ins, plus both tabs this host adds itself — `hide_tab` and
+  // `add_tab` write to the same strip, so a mistake in one is visible in the other.
+  for (const name of ['Basics', 'Piping', 'SHACL', 'Identity', 'Timer']) {
+    await expect(strip.getByRole('tab', { name, exact: true })).toBeVisible();
+  }
+
+  // A blunt floor under "hid everything": the strip is still the full walkthrough set.
+  expect(await strip.getByRole('tab').count()).toBeGreaterThanOrEqual(12);
+
+  expect(unexpected, `unexpected page errors:\n${unexpected.join('\n')}`).toEqual([]);
+});
+
+// ---------------------------------------------------------------------------
+// The passkey ceremony: the authenticator is the source of truth, not localStorage.
+//
+// The old bridge cached the credential id in `localStorage` under `ikigai:passkey:credId`
+// and branched on it. Once written, every later sign-in called `get()` with
+// `allowCredentials` naming that one credential — and nothing ever removed the key. If
+// the passkey was not in THIS authenticator (never synced, deleted, made on another
+// device or profile) Safari found no local match and offered only QR-code-or-hardware-key.
+// The browser was pinned forever on a branch that could not succeed, with the
+// registration path unreachable. Brian hit exactly this in Safari.
+//
+// A WebAuthn ceremony cannot complete headlessly, so this asserts on which branch the page
+// takes and what it asks for: stub `navigator.credentials` and read the options back.
+//
+// SCOPE, deliberately: this checks the MECHANISM. What the Identity tab means — serverless
+// identity *selection/derivation*, not authenticated login — is unchanged and out of scope.
+test('the passkey ceremony asks the authenticator, and can still register', async ({ page }) => {
+  /** @type {string[]} */ const unexpected = [];
+  page.on('pageerror', (err) => unexpected.push(`pageerror: ${err.message}`));
+  // Nothing here should ever open a browser dialog: the recovery is an in-page affordance,
+  // precisely so registration starts from its own click. Playwright dismisses dialogs by
+  // default, so a regression to `confirm()` would fail below rather than hang — but say so.
+  page.on('dialog', (d) => {
+    unexpected.push(`unexpected dialog: ${d.message()}`);
+    return d.dismiss();
+  });
+
+  // Installed before any page script runs, so the bridge only ever sees the stub.
+  await page.addInitScript(() => {
+    /** @type {{op: string, opts: any}[]} */ const calls = [];
+    // `empty` = a fresh profile whose authenticator holds nothing for this origin;
+    // `holds` = a returning visitor's, with a discoverable credential in it.
+    window.__pkCalls = calls;
+    window.__pkMode = 'empty';
+    const FIXED_RAW_ID = new Uint8Array(32).fill(7).buffer;
+    // Buffers don't survive the page->test boundary; their presence is all we assert.
+    const plain = (pk) =>
+      JSON.parse(
+        JSON.stringify(pk, (_k, v) =>
+          v instanceof ArrayBuffer || ArrayBuffer.isView(v) ? '<bytes>' : v,
+        ),
+      );
+    navigator.credentials.get = async (o) => {
+      calls.push({ op: 'get', opts: plain(o.publicKey) });
+      if (window.__pkMode === 'empty') {
+        const err = new Error('the authenticator holds no credential for this origin');
+        err.name = 'NotAllowedError';
+        throw err;
+      }
+      return { rawId: FIXED_RAW_ID };
+    };
+    navigator.credentials.create = async (o) => {
+      calls.push({ op: 'create', opts: plain(o.publicKey) });
+      return { rawId: FIXED_RAW_ID };
+    };
+  });
+
+  await page.goto('/index.html');
+  const toolbar = page.locator('nav.ik-toolbar');
+  await expect(toolbar).toBeVisible();
+  await toolbar.getByRole('button', { name: 'Demo', exact: true }).click();
+  await page.getByRole('tab', { name: 'Identity', exact: true }).click();
+
+  // --- Fresh profile: probe, find nothing, OFFER registration ---------------
+  await page.locator('#ik-login').click();
+
+  // No passkey exists, so the page must not be signed in and must not have registered
+  // one behind the visitor's back — it offers.
+  await expect(page.locator('#ik-register')).toBeVisible();
+  await expect(page.locator('#ik-logout')).toHaveCount(0);
+  expect(
+    await page.evaluate(() => window.__pkCalls.map((c) => c.op)),
+    'the probe alone must not mint a credential',
+  ).toEqual(['get']);
+
+  // WebKit gates a WebAuthn ceremony on user activation and `get()` consumes it, so
+  // registration has to start from its OWN click — chaining it onto the failed probe is
+  // what would refuse in Safari, the browser this bug was reported from.
+  await page.locator('#ik-register').click();
+
+  // Signed in: the affordance flips and the segment walkthrough appears, so the ceremony
+  // ran all the way through `sink urn:host:login` and not merely up to the stub.
+  await expect(page.locator('#ik-logout')).toBeVisible();
+  await expect(page.locator('.rb-steps .rb-step')).toHaveCount(3);
+
+  const fresh = await page.evaluate(() => window.__pkCalls);
+  expect(
+    fresh.map((c) => c.op),
+    'a fresh profile probes the authenticator, finds nothing, then registers on request',
+  ).toEqual(['get', 'create']);
+
+  // THE REGRESSION. `allowCredentials` is what named a credential the authenticator might
+  // not hold; without it the credential answers for itself and the keychain decides.
+  expect(fresh[0].opts.allowCredentials, 'get() must not name a credential').toBeUndefined();
+
+  // Registration must mint a DISCOVERABLE credential — otherwise the allowCredentials-free
+  // get() above has nothing to find, and the next visit dead-ends again.
+  expect(fresh[1].opts.authenticatorSelection).toMatchObject({
+    residentKey: 'required',
+    requireResidentKey: true,
+    authenticatorAttachment: 'platform',
+  });
+
+  // No credential identity is cached anywhere: that cache WAS the bug.
+  expect(
+    await page.evaluate(() => localStorage.getItem('ikigai:passkey:credId')),
+    'the page must keep no record of which credential the authenticator holds',
+  ).toBeNull();
+
+  // --- Returning visitor: assert, and do NOT mint a second passkey ----------
+  await page.locator('#ik-logout').click();
+  await expect(page.locator('#ik-login')).toBeVisible();
+  await page.evaluate(() => {
+    window.__pkCalls.length = 0;
+    window.__pkMode = 'holds';
+  });
+
+  await page.locator('#ik-login').click();
+  await expect(page.locator('#ik-logout')).toBeVisible();
+
+  const returning = await page.evaluate(() => window.__pkCalls);
+  expect(
+    returning.map((c) => c.op),
+    'an authenticator that already holds a passkey signs in with it, and registers nothing',
+  ).toEqual(['get']);
+  expect(returning[0].opts.allowCredentials).toBeUndefined();
+
+  expect(unexpected, `unexpected page errors:\n${unexpected.join('\n')}`).toEqual([]);
+});
