@@ -73,8 +73,11 @@ demo rather than prevent one, which is precisely the twenty days above.
 Running it there, rather than as an in-crate `wasm-bindgen-test`, buys coverage a Rust test
 cannot have: `dist/index.html` carries ~400 lines of hand-written glue (the `/k/` fetch
 interception, the htmx adapter, the passkey bridge) that no Rust test can reach, and
-`pages.yml` builds two module wasms from `git clone --depth 1` of `ikigai-xslt` and
-`ikigai-jsonld` — unpinned upstream `HEAD` that nothing in this repo compiles or lints.
+`pages.yml` builds two module wasms from `ikigai-xslt` and `ikigai-jsonld`, which nothing
+in this repo compiles or lints. Those were unpinned upstream `HEAD` until 2026-09-02 — any
+upstream commit reached the public site with no commit here — and are now pinned to exact
+SHAs in the workflow's `env:` block. Pinning makes a module change deliberate; this gate is
+what vets the bump.
 
 **Note on cost:** `build` and `smoke` now run on every PR, duplicating work `ci.yml` does
 not do. If that becomes a drag, the tidy-up is to factor `build` + `smoke` into a reusable
