@@ -374,11 +374,7 @@ function offerRegistration() {
     'Create one</a></span>';
 }
 
-// Serverless WebAuthn: no relying party to verify the assertion, so this is identity
-// *selection/derivation*, not authenticated login. The credential's id is stable, so a
-// SHA-256 of it gives a stable per-passkey client id that keys the workspace segment.
-// The browser is the passkey "minter": it turns the id into the fs scopes and logs in
-// via the resource. (A QUIC server's minter would derive scopes from the client cert.)
+// Sign in: ask the authenticator first, and offer registration when it holds nothing.
 async function passkeyLogin() {
   const rawId = await assertExistingPasskey();
   if (!rawId) {
