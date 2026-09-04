@@ -323,3 +323,138 @@ test('the passkey ceremony asks the authenticator, and can still register', asyn
 
   expect(unexpected, `unexpected page errors:\n${unexpected.join('\n')}`).toEqual([]);
 });
+
+// ---------------------------------------------------------------------------
+// The transition window: `urn:fn:*` → `urn:iki:fn:*`.
+//
+// `ikigai-fn` 0.2.0 renamed the four names it owns and installs no alias — binding
+// authority is a host concern, and this repo is the host. So this host bumped the library
+// and installed `AliasTable::new().prefix("urn:fn:", "urn:iki:fn:")` in the same release
+// (`build_kernel`), and the claim it is making is not "the code compiles" but "every old
+// name a visitor, a bookmark or a pasted transcript still holds keeps answering."
+//
+// That claim is only worth the running of it. Each assertion below is one of ikigai-core's
+// alias decisions, checked against the built wasm in a browser rather than trusted:
+//
+//   decision 3 — the two names share ONE cache entry. Proved on the SERVING path (the
+//                second spelling comes back `cached`, not recomputed), on the read-only
+//                probe, and on the readout (every entry the page and this test created
+//                under BOTH spellings is listed under the backing name, and none under the
+//                logical one). The other half of decision 3 — one golden thread, so a
+//                `Sink` through either name cuts the other — is NOT exercised here: it
+//                follows from the same identity point (the id is derived after the rewrite
+//                is adopted), but every `urn:iki:fn:*` endpoint is Source-only, so this
+//                host has no sinkable resource in that namespace to cut.
+//   decision 4 — the catalog advertises the NEW name only, which is what makes a
+//                catalog-driven consumer migrate itself while an old-name holder keeps
+//                working. `list` must show one and not the other.
+//   nested     — the home page is a compose shape, and `urn:data:about` (a shape inside
+//                that shape) keeps one old-name marker on purpose. It is two levels down,
+//                and `compose` propagates a failed marker, so if the rewrite ever stopped
+//                happening the page would not render at all.
+//
+// ABLATION (run before this was committed, and the way to re-verify it): delete the
+// `.with_aliases(...)` line in `build_kernel`, rebuild, and every old-name assertion here
+// fails — the terminal answers `no endpoint resolved for urn:fn:toUpper`, the about-box
+// text never appears, and the page itself renders `compose error:` instead of a toolbar.
+// Restore the line and it passes again. A window nobody has watched close is not a
+// demonstrated window.
+
+/** Run one line in the in-page terminal and return its output, isolated.
+ *
+ * `clear` empties the transcript (keeping history), so what is read back afterwards is
+ * this line's output and nothing else — the alternative, matching against the whole
+ * scrollback, would let an earlier command's text satisfy a later assertion. */
+async function runLine(page, line) {
+  const cli = page.locator('ikigai-cli');
+  const input = cli.locator('.cli-input');
+  await input.fill('clear');
+  await input.press('Enter');
+  await expect(cli.locator('.cli-line')).toHaveCount(0);
+  await input.fill(line);
+  await input.press('Enter');
+  // The echo lands synchronously; the result follows when the kernel answers.
+  await expect.poll(async () => cli.locator('.cli-line').count()).toBeGreaterThan(1);
+  return (await cli.locator('.cli-line:not(.cli-echo)').allTextContents()).join('\n');
+}
+
+/** How many cache entries the Cache card lists for a given IRI (one line each). */
+function cacheEntriesFor(readout, iri) {
+  return (readout || '').split('\n').filter((l) => l.includes(iri)).length;
+}
+
+test('the old urn:fn: names still resolve, through the host alias table', async ({ page }) => {
+  /** @type {string[]} */ const unexpected = [];
+  page.on('pageerror', (err) => unexpected.push(`pageerror: ${err.message}`));
+
+  await page.goto('/index.html');
+  const toolbar = page.locator('nav.ik-toolbar');
+  await expect(toolbar).toBeVisible();
+
+  // --- Nested: an old name two levels down, resolved during the page compose ---
+  // `urn:data:page` transcludes `urn:data:about`, which transcludes `$a{urn:fn:toUpper}`.
+  // Seeing the uppercased text means the rewrite happened inside a nested resolution, on
+  // the ordinary render path, with nothing in this test driving it.
+  await expect(page.locator('aside.about')).toContainText('THE OLD NAME STILL RESOLVES');
+  // The new name, in the same box — both spellings reach the same endpoint.
+  await expect(page.locator('aside.about')).toContainText('EVEN THIS NESTED SHAPE WAS COMPOSED');
+
+  // --- The table is installed, and says so ---------------------------------
+  const aliases = await runLine(page, 'source urn:kernel:aliases');
+  expect(aliases).toContain('prefix');
+  expect(aliases).toMatch(/urn:fn:\s+->\s+urn:iki:fn:/);
+  // The page's own compose already put hops on the counter — the exhibit above.
+  expect(aliases).toMatch(/[1-9]\d* hops/);
+
+  // --- Both names resolve, and share ONE entry -----------------------------
+  // A value nothing else in the demo uses, so the entry it creates is unambiguous.
+  const probe = 'alias-window-proof';
+  const old = await runLine(page, `source urn:fn:toUpper ${probe}`);
+  expect(old).toContain(probe.toUpperCase());
+  expect(old).toContain('computed');
+
+  // The SAME argument under the NEW name. `cached` here is the whole of decision 3: the
+  // kernel adopted the backing name before it computed the request id, so this is not a
+  // second endpoint run that happens to agree — it is the first one's entry.
+  const renamed = await runLine(page, `source urn:iki:fn:toUpper ${probe}`);
+  expect(renamed).toContain(probe.toUpperCase());
+  expect(renamed).toContain('cached');
+  expect(renamed).not.toContain('computed');
+
+  // And the read-only probe canonicalizes the same way: `cache <old name>` must not
+  // answer "not cached" about an entry the new name is being served from.
+  expect(await runLine(page, `cache urn:fn:toUpper ${probe}`)).toContain('cached');
+
+  // --- The catalog advertises the NEW name only ----------------------------
+  const list = await runLine(page, 'list');
+  expect(list).toContain('urn:iki:fn:toUpper');
+  expect(list).toContain('urn:iki:fn:compose');
+  // `urn:iki:fn:` does not contain `urn:fn:`, so this is a real exclusion, not a
+  // substring that the new name happens to satisfy.
+  expect(list, 'the catalog must not offer the pre-migration names').not.toContain('urn:fn:');
+
+  // --- A LINKED MODULE's baked-in old names still run -----------------------
+  // `ikigai-runbook` 0.1.13 hardcodes `source urn:fn:toUpper hello` as a Basics step, and
+  // this host cannot edit it — it is a published crate. That step working is the case the
+  // window actually exists for: content the host does not control, still holding the old
+  // name, resolving anyway because the alias lives in the HOST rather than the library.
+  await toolbar.getByRole('button', { name: 'Demo', exact: true }).click();
+  await page.getByRole('tab', { name: 'Basics', exact: true }).click();
+  await page.getByRole('button', { name: 'uppercase' }).click();
+  await expect(page.locator('#rb-out')).toContainText('HELLO');
+
+  // --- The Cache card: one entry for two names -----------------------------
+  await toolbar.getByRole('button', { name: 'Control', exact: true }).click();
+  const cacheCard = page.locator('#ctl-cards pre.ctl-readout').nth(1);
+  await expect(cacheCard).not.toBeEmpty();
+  const readout = await cacheCard.textContent();
+  // The page composed toUpper twice (once under each spelling) and this test added one
+  // more argument under both spellings — every one of them keyed to the backing name.
+  expect(cacheEntriesFor(readout, 'urn:iki:fn:toUpper')).toBeGreaterThanOrEqual(3);
+  expect(
+    readout,
+    'a logical name with its own cache entry is the stale-representation bug decision 3 exists to prevent',
+  ).not.toContain('urn:fn:toUpper');
+
+  expect(unexpected, `unexpected page errors:\n${unexpected.join('\n')}`).toEqual([]);
+});

@@ -57,6 +57,31 @@ also fails on any browser dialog, since the recovery is in-page by design. It ch
 mechanism only — what the Identity tab *means* (serverless identity selection/derivation,
 not authenticated login) is unchanged.
 
+**The transition window is open** (`the old urn:fn: names still resolve…`): `ikigai-fn`
+0.2.0 renamed the four names it owns — `urn:fn:*` → `urn:iki:fn:*` — and installs no alias,
+because binding authority is a host concern and this repo is the host. `build_kernel`
+installs `AliasTable::new().prefix("urn:fn:", "urn:iki:fn:")` in the same release that
+adopts the bump; without that pairing the demo would ship with every `urn:fn:` name dead.
+The claim being gated is not "it compiles" but "every old name a bookmark, a transcript or
+a visitor's muscle memory still holds keeps answering", so the test drives the in-page
+terminal and reads the Control panel:
+
+- the **old** name resolves (`source urn:fn:toUpper …`), and so does the new one;
+- both share **one cache entry** — the second spelling comes back `cached`, not
+  recomputed, and `cache urn:fn:toUpper …` (the read-only probe) agrees. The Cache card
+  lists the backing name only;
+- the **catalog offers the new name only** (`list`), which is what makes a catalog-driven
+  consumer migrate itself while an old-name holder keeps working;
+- the rewrite survives **nested** resolution: `urn:data:about` keeps one old-name marker
+  on purpose, two levels down inside the composed page, and its text must render;
+- a **linked module's baked-in old name** still runs: `ikigai-runbook` 0.1.13 hardcodes
+  `source urn:fn:toUpper hello` as a Basics step, and this host cannot edit it — it is a
+  published crate. That is the case the window exists for, and the reason the table belongs
+  to the host rather than the library: it covers content the host does not control.
+
+⚠ That last one couples the page to the rule: `compose` propagates a failed marker, so the
+exhibit and the alias rule are deleted in the same edit or the whole page dies.
+
 ## It was verified against the actual bug
 
 Before this landed, the gate was replayed against a deliberately broken build — `Cargo.toml`
@@ -68,6 +93,15 @@ reproducing the original panic chain verbatim: `time not implemented on this pla
 Worth knowing which assertion caught it: in that replay all three cards still *rendered*,
 frozen at `runs 0`. The card-count check alone would have missed it. The run count and the
 console hygiene are what failed.
+
+The alias test was verified the same way, by **ablation**: remove `.with_aliases(...)` from
+`build_kernel` and rebuild. The page then fails to compose at all — `compose error: no
+endpoint resolved for urn:fn:toUpper`, and all four tests fail on a missing toolbar. Point
+the about-box marker at the new name as well, so the page renders again, and the failures
+narrow to exactly the claims: `urn:kernel:aliases` reads `(no rewrite table installed)`,
+`source urn:fn:toUpper …` answers `no endpoint resolved for urn:fn:toUpper`, and the probe
+answers `not cached`. Restore both and it passes. Re-run that when the rule changes: a
+transition window nobody has watched close is not a demonstrated window.
 
 The two later tests were replayed the same way, against the pre-fix `src/lib.rs` and
 `dist/index.html` rebuilt for wasm32: the strip test fails on `Lisp` (`toHaveCount` 0

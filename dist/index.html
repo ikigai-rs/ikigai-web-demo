@@ -167,7 +167,7 @@ class IkigaiCli extends HTMLElement {
     this.input = this.querySelector('.cli-input');
     this.history = [];
     this.hpos = 0;
-    this.print('Type a request, or `help`.  e.g.  source urn:fn:toUpper hello | urn:fn:toUpper', 'hint');
+    this.print('Type a request, or `help`.  e.g.  source urn:iki:fn:toUpper hello | urn:iki:fn:toUpper', 'hint');
     this.input.addEventListener('keydown', (e) => this.onKey(e));
     this.addEventListener('click', () => this.input.focus());
     // (The ZeroTrust walkthrough now lives in the runbook's ZeroTrust tab — a
@@ -223,7 +223,7 @@ await init({ module_or_path: './ikigai_web_demo_bg.wasm?v=__BUILD__' });
 // result. The composed HTML contains <ikigai-cli>, which self-wires on insertion.
 try {
   const app = document.getElementById('app');
-  const r = JSON.parse(await evalLineAsync('source urn:fn:compose src=urn:data:page'));
+  const r = JSON.parse(await evalLineAsync('source urn:iki:fn:compose src=urn:data:page'));
   app.innerHTML = r.kind === 'output' ? r.text : ('compose error: ' + r.text);
   htmx.process(app); // wire the page toolbar's hx-* so inter-page nav works on first load
 } catch (e) {

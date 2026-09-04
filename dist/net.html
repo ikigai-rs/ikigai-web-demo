@@ -94,11 +94,11 @@ async function call(bytes) {
 const HELP = [
   'commands (each one is a Call to the remote kernel over WebTransport):',
   '  source <iri> [input] [k=v …]   resolve a resource (input fills `in`)',
-  '  compose <iri>                  source urn:fn:compose src=<iri>',
+  '  compose <iri>                  source urn:iki:fn:compose src=<iri>',
   '  cache <iri> [input]            is it cached on the server? (no resolve)',
   '  list                           the resources bound on the server',
   '  help',
-  'try:  source urn:fn:toUpper hello   ·   compose urn:data:page   ·   list',
+  'try:  source urn:iki:fn:toUpper hello   ·   compose urn:data:page   ·   list',
 ].join('\n');
 
 // Turn a REPL line into Call bytes (or a {help}/{error} marker).
@@ -109,7 +109,7 @@ function buildCall(line) {
   const m = t.match(/^(source|src|cache|compose)\s+(\S+)\s*(.*)$/);
   if (!m) return { error: 'try: source <iri> [input] [k=v] · compose <iri> · cache <iri> · list · help' };
   let cmd = m[1], iri = m[2], rest = m[3], args = {};
-  if (cmd === 'compose') { args.src = iri; iri = 'urn:fn:compose'; cmd = 'source'; }
+  if (cmd === 'compose') { args.src = iri; iri = 'urn:iki:fn:compose'; cmd = 'source'; }
   else {
     const positional = [];
     for (const tok of (rest.match(/[^\s"]+|"[^"]*"/g) || [])) {

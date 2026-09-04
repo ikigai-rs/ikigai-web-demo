@@ -9,7 +9,7 @@ The page **is** a resource. `index.html` is a near-empty shell that makes one ca
 `compose('urn:data:page')` — and drops the result into the body. The kernel resolves
 the page *shape* (HTML) and recursively expands every `$a{<iri>}` transclusion marker
 in it, resolving each embedded resource through the kernel; a marker may carry
-arguments (`$a{urn:fn:toUpper?in="resource-oriented computing"}`) and a transcluded
+arguments (`$a{urn:iki:fn:toUpper?in="resource-oriented computing"}`) and a transcluded
 shape may contain further markers, so composition recurses. Resolution, the endpoints,
 the `compose` builtin, and the content-addressed cache all run client-side in WASM. The
 client is ~5 lines of glue — the layout *and* its contents come from the kernel.
@@ -20,10 +20,21 @@ The page even carries a live **terminal** — the *same* renderer-agnostic Engin
 desktop `ikigai` REPL uses, compiled to WASM and driving this page's kernel. It's
 mounted by composition too: a `$a{urn:demo:web-cli}` marker in the page shape resolves
 to an `<ikigai-cli>` element that wires itself up on insertion. Because it shares the
-page's kernel and content-addressed cache, typing `source urn:fn:compose
+page's kernel and content-addressed cache, typing `source urn:iki:fn:compose
 src=urn:data:page` into it returns the very page you're reading — reported `cached`,
 since the page already composed it. The whole grammar works in the browser: pipelines
 `|`, map `..`, fork `( a ; b )`, named `key=value` args, plus `compose`, `cache`, `cap`, and `list`.
+
+**A namespace migration you can watch happen.** `ikigai-fn` 0.2.0 moved the four names it
+owns from `urn:fn:*` into the shared `urn:iki:` namespace, and this host installs a
+rewrite table (`Kernel::with_aliases`) in the same release that adopts the bump. So
+`source urn:fn:toUpper hello` still answers here, `source urn:iki:fn:toUpper hello` comes
+back `cached` off the *same* entry — one cache entry and one golden thread for both names —
+and `list` advertises only the new one, so anything that discovers resources by reading the
+catalog migrates itself. `source urn:kernel:aliases` reads the table back out with a live
+hop count, which is what tells an operator when the old name has stopped arriving and the
+rule can go. The about box on the page is the proof in situ: its inner marker still names
+`urn:fn:toUpper`, two levels down inside a composed page, and renders anyway.
 
 A row of **ZeroTrust** buttons above the terminal walks the capability story, enforced
 client-side in WASM: `cap read-only` narrows the session to a *read* scope, after which a
@@ -65,7 +76,7 @@ cd dist && python3 -m http.server 8087 --bind 127.0.0.1
 Then open <http://127.0.0.1:8087>.
 
 The page fills its slots from the kernel on load, and the **Interactive** section
-lets you SOURCE `urn:fn:toUpper` / `urn:fn:reverseList` against your own input.
+lets you SOURCE `urn:iki:fn:toUpper` / `urn:iki:fn:reverseList` against your own input.
 
 ### After editing `src/lib.rs`
 
@@ -92,7 +103,7 @@ kernel is on the other end.
 
 The composed page's terminal is **live too**: each command (`source <iri>`, `compose
 <iri>`, `cache <iri>`, `list`) is its own `ikigai-wire` Call on a fresh WebTransport
-stream, resolved by the remote kernel — so `source urn:fn:toUpper hi` twice shows
+stream, resolved by the remote kernel — so `source urn:iki:fn:toUpper hi` twice shows
 `computed` then `cached`, the *server's* cache.
 
 ```bash
