@@ -15,9 +15,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use ikigai_core::{
-    ArgRef, ArgSpec, Capability, Clock, Description, Endpoint, Error, Exact, Fallback, FnEndpoint,
-    Invocation, Iri, Kernel, MetaRenderer, ReprType, Representation, Request, Result, Space, Time,
-    UriTemplate, Verb,
+    AliasTable, ArgRef, ArgSpec, Capability, Clock, Description, Endpoint, Error, Exact, Fallback,
+    FnEndpoint, Invocation, Iri, Kernel, MetaRenderer, ReprType, Representation, Request, Result,
+    Space, Time, UriTemplate, Verb,
 };
 use ikigai_vocab::TurtleRenderer;
 use std::rc::Rc;
@@ -128,10 +128,10 @@ fn clock_now() -> FnEndpoint {
 /// shape with its own marker.
 const PAGE_HTML: &str = r##"
 <nav class="ik-toolbar" aria-label="pages">
-  <button class="ik-nav selected" hx-get="/k/source urn:fn:compose src=urn:data:page" hx-target="#app" hx-swap="innerHTML" aria-current="page">Home</button>
-  <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:docs" hx-target="#app" hx-swap="innerHTML">Catalog</button>
-  <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:control" hx-target="#app" hx-swap="innerHTML">Control</button>
-  <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:demo" hx-target="#app" hx-swap="innerHTML">Demo</button>
+  <button class="ik-nav selected" hx-get="/k/source urn:iki:fn:compose src=urn:data:page" hx-target="#app" hx-swap="innerHTML" aria-current="page">Home</button>
+  <button class="ik-nav" hx-get="/k/source urn:iki:fn:compose src=urn:data:docs" hx-target="#app" hx-swap="innerHTML">Catalog</button>
+  <button class="ik-nav" hx-get="/k/source urn:iki:fn:compose src=urn:data:control" hx-target="#app" hx-swap="innerHTML">Control</button>
+  <button class="ik-nav" hx-get="/k/source urn:iki:fn:compose src=urn:data:demo" hx-target="#app" hx-swap="innerHTML">Demo</button>
   <span class="ik-clock" title="local time — a cacheable resource (urn:time:now) polled every second, recomputed once a minute" hx-get="/k/source urn:time:now html=true" hx-trigger="load, every 1s" hx-target="#ik-clock-val" hx-swap="innerHTML"><span id="ik-clock-val" class="ik-clock-val"></span></span>
 </nav>
 <h1>A page assembled by ikigai</h1>
@@ -143,13 +143,13 @@ const PAGE_HTML: &str = r##"
 <article>
   <p>$a{urn:demo:greeter}</p>
 
-  <p>Shout it (<code>urn:fn:toUpper</code>):
-     <b>$a{urn:fn:toUpper?in="resource-oriented computing"}</b></p>
+  <p>Shout it (<code>urn:iki:fn:toUpper</code>):
+     <b>$a{urn:iki:fn:toUpper?in="resource-oriented computing"}</b></p>
 
   $a{urn:data:about}
 
   <p class="literal">A literal marker — written with a doubled <code>$</code> — survives
-     unexpanded: <code>$$a{urn:fn:toUpper?in=x}</code></p>
+     unexpanded: <code>$$a{urn:iki:fn:toUpper?in=x}</code></p>
 </article>
 
 $a{urn:demo:web-cli}
@@ -165,10 +165,10 @@ $a{urn:demo:web-cli}
 /// and become real HTTP resources once ikigai is served externally.
 const DOCS_HTML: &str = r##"
 <nav class="ik-toolbar" aria-label="pages">
-  <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:page" hx-target="#app" hx-swap="innerHTML">Home</button>
-  <button class="ik-nav selected" hx-get="/k/source urn:fn:compose src=urn:data:docs" hx-target="#app" hx-swap="innerHTML" aria-current="page">Catalog</button>
-  <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:control" hx-target="#app" hx-swap="innerHTML">Control</button>
-  <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:demo" hx-target="#app" hx-swap="innerHTML">Demo</button>
+  <button class="ik-nav" hx-get="/k/source urn:iki:fn:compose src=urn:data:page" hx-target="#app" hx-swap="innerHTML">Home</button>
+  <button class="ik-nav selected" hx-get="/k/source urn:iki:fn:compose src=urn:data:docs" hx-target="#app" hx-swap="innerHTML" aria-current="page">Catalog</button>
+  <button class="ik-nav" hx-get="/k/source urn:iki:fn:compose src=urn:data:control" hx-target="#app" hx-swap="innerHTML">Control</button>
+  <button class="ik-nav" hx-get="/k/source urn:iki:fn:compose src=urn:data:demo" hx-target="#app" hx-swap="innerHTML">Demo</button>
   <span class="ik-clock" title="local time — a cacheable resource (urn:time:now) polled every second, recomputed once a minute" hx-get="/k/source urn:time:now html=true" hx-trigger="load, every 1s" hx-target="#ik-clock-val" hx-swap="innerHTML"><span id="ik-clock-val" class="ik-clock-val"></span></span>
 </nav>
 <h1>The catalog</h1>
@@ -189,10 +189,10 @@ const DOCS_HTML: &str = r##"
 /// about composition and gives the demos their own page.
 const DEMO_HTML: &str = r##"
 <nav class="ik-toolbar" aria-label="pages">
-  <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:page" hx-target="#app" hx-swap="innerHTML">Home</button>
-  <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:docs" hx-target="#app" hx-swap="innerHTML">Catalog</button>
-  <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:control" hx-target="#app" hx-swap="innerHTML">Control</button>
-  <button class="ik-nav selected" hx-get="/k/source urn:fn:compose src=urn:data:demo" hx-target="#app" hx-swap="innerHTML" aria-current="page">Demo</button>
+  <button class="ik-nav" hx-get="/k/source urn:iki:fn:compose src=urn:data:page" hx-target="#app" hx-swap="innerHTML">Home</button>
+  <button class="ik-nav" hx-get="/k/source urn:iki:fn:compose src=urn:data:docs" hx-target="#app" hx-swap="innerHTML">Catalog</button>
+  <button class="ik-nav" hx-get="/k/source urn:iki:fn:compose src=urn:data:control" hx-target="#app" hx-swap="innerHTML">Control</button>
+  <button class="ik-nav selected" hx-get="/k/source urn:iki:fn:compose src=urn:data:demo" hx-target="#app" hx-swap="innerHTML" aria-current="page">Demo</button>
   <span class="ik-clock" title="local time — a cacheable resource (urn:time:now) polled every second, recomputed once a minute" hx-get="/k/source urn:time:now html=true" hx-trigger="load, every 1s" hx-target="#ik-clock-val" hx-swap="innerHTML"><span id="ik-clock-val" class="ik-clock-val"></span></span>
 </nav>
 <h1>Guided demos</h1>
@@ -212,10 +212,10 @@ const DEMO_HTML: &str = r##"
 /// composite resource pulling subrequests," now ticking live.
 const CONTROL_HTML: &str = r##"
 <nav class="ik-toolbar" aria-label="pages">
-  <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:page" hx-target="#app" hx-swap="innerHTML">Home</button>
-  <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:docs" hx-target="#app" hx-swap="innerHTML">Catalog</button>
-  <button class="ik-nav selected" hx-get="/k/source urn:fn:compose src=urn:data:control" hx-target="#app" hx-swap="innerHTML" aria-current="page">Control</button>
-  <button class="ik-nav" hx-get="/k/source urn:fn:compose src=urn:data:demo" hx-target="#app" hx-swap="innerHTML">Demo</button>
+  <button class="ik-nav" hx-get="/k/source urn:iki:fn:compose src=urn:data:page" hx-target="#app" hx-swap="innerHTML">Home</button>
+  <button class="ik-nav" hx-get="/k/source urn:iki:fn:compose src=urn:data:docs" hx-target="#app" hx-swap="innerHTML">Catalog</button>
+  <button class="ik-nav selected" hx-get="/k/source urn:iki:fn:compose src=urn:data:control" hx-target="#app" hx-swap="innerHTML" aria-current="page">Control</button>
+  <button class="ik-nav" hx-get="/k/source urn:iki:fn:compose src=urn:data:demo" hx-target="#app" hx-swap="innerHTML">Demo</button>
   <span class="ik-clock" title="local time — a cacheable resource (urn:time:now) polled every second, recomputed once a minute" hx-get="/k/source urn:time:now html=true" hx-trigger="load, every 1s" hx-target="#ik-clock-val" hx-swap="innerHTML"><span id="ik-clock-val" class="ik-clock-val"></span></span>
 </nav>
 <h1>Control plane <span class="ctl-live"><span class="ctl-live-dot"></span>live</span></h1>
@@ -227,7 +227,7 @@ const CONTROL_HTML: &str = r##"
    <code>urn:kernel:scheduler</code>, <code>urn:kernel:cache</code>, and
    <code>urn:time:jobs</code>. Open the <strong>Demo → Timer</strong> tab, start the greeter
    timer, and watch the <em>Time jobs</em> run count climb here each second.</p>
-<div hx-get="/k/source urn:fn:compose src=urn:data:control-cards"
+<div hx-get="/k/source urn:iki:fn:compose src=urn:data:control-cards"
      hx-trigger="load, every 1s" hx-target="#ctl-cards" hx-swap="innerHTML" style="display:contents">
   <div id="ctl-cards" class="ctl-grid"></div>
 </div>
@@ -307,7 +307,15 @@ const ABOUT_HTML: &str = r#"<aside class="about">
   <h3>Composition recurses</h3>
   <p>This box is a separate resource (<code>urn:data:about</code>) the page pulled in — and
      it pulled in another:
-     <b>$a{urn:fn:toUpper?in="even this nested shape was composed"}</b>.</p>
+     <b>$a{urn:iki:fn:toUpper?in="even this nested shape was composed"}</b>.</p>
+  <p>And a <em>name that moved</em>: <code>ikigai-fn</code> 0.2.0 renamed
+     <code>urn:fn:toUpper</code> to <code>urn:iki:fn:toUpper</code>. The marker below is
+     still written the old way — two levels down, inside a shape inside a composed page —
+     and it resolves anyway, through the rewrite table this host installs:
+     <b>$a{urn:fn:toUpper?in="the old name still resolves"}</b>. The catalog lists only the
+     new name, so anything that discovers resources by reading it migrates itself;
+     <code>source urn:kernel:aliases</code> shows the rule and how many names have come
+     through it.</p>
 </aside>"#;
 
 /// `urn:demo:web-cli` — the terminal mount. Transcluded into the page; the
@@ -318,7 +326,7 @@ const WEB_CLI_HTML: &str = r#"<section class="cli-mount">
      <code>ikigai</code> REPL, on this page's kernel — pipelines <code>|</code>, map
      <code>..</code>, fork <code>( a ; b )</code>, named <code>key=value</code> args, plus
      <code>compose</code>, <code>cache</code>, <code>cap</code>, and <code>list</code>. Try
-     <code>list</code>, or <code>source urn:fn:compose src=urn:data:page</code> to compose this
+     <code>list</code>, or <code>source urn:iki:fn:compose src=urn:data:page</code> to compose this
      very page. You can walk the capability story right here — narrow the session with
      <code>cap read-only</code> and watch a write get refused, while the jail refuses to be
      escaped even at full authority (the guided walkthrough is the <b>Demo → ZeroTrust</b> tab).</p>
@@ -1121,6 +1129,54 @@ pub fn build_kernel(nature: &'static str) -> Kernel {
     Kernel::with_meta_renderer(root, Arc::new(JsonOrTurtle))
         .with_clock(Arc::new(BrowserClock))
         .with_subclass_axioms(ikigai_rdf::subclass_axioms(ikigai_runbook::ALIGNMENT_TTL))
+        // The transition window for `ikigai-fn`'s namespace move. See `alias_table`.
+        .with_aliases(Arc::new(alias_table()))
+}
+
+/// The logical-rewrite table this host installs: `urn:fn:` → `urn:iki:fn:`.
+///
+/// **Binding authority is a host concern.** `ikigai-fn` 0.2.0 renamed the four names it
+/// owns (`toUpper`, `reverseList`, `compose`, `conditional`) into the single `urn:iki:`
+/// namespace and installs no alias of its own — a library that aliased its own old names
+/// would decide the question for every host that links it. So the bump and this table
+/// land in the same commit: adopt 0.2.0 without it and every `urn:fn:` name in a
+/// bookmark, a pasted transcript, a runbook or a visitor's muscle memory dies silently.
+///
+/// What the window buys, concretely (ikigai-core's `alias` decisions):
+///
+/// * both names resolve, and share **one** cache entry and **one** golden thread — the
+///   kernel adopts the backing name before it computes the request id, so a `sink`
+///   through either cuts the other;
+/// * `urn:kernel:catalog` advertises only the **new** name, so anything that discovers
+///   resources by reading the catalog migrates itself while old-name holders keep
+///   working;
+/// * `source urn:kernel:aliases` reads the table back out, with a per-rule hop counter —
+///   the always-on answer to "is anything still arriving on the old name?".
+///
+/// **Only `urn:fn:` moves.** `ikigai-fn` also binds `urn:demo:*`, and `urn:demo:` is
+/// bound in this host, in `ikigai-cli` and in `ikigai-core` too. A prefix alias over a
+/// namespace that several repos bind is broken by construction: the moved half rewrites
+/// and resolves, the unmoved half rewrites to a name nothing binds and dies. A shared
+/// namespace moves atomically across every binder or not at all.
+///
+/// **Why the table is in source here, not a config resource.** `urn:kernel:aliases`
+/// serves the installed table, and an operator-editable table is the right shape for a
+/// long-lived server — but this host is a wasm bundle with no configuration file and no
+/// filesystem, and a table read *through* the kernel would have to resolve before the
+/// table that governs resolution exists. The static table has no bootstrap problem.
+///
+/// **What closes the window**: nothing automatic. The catalog stops offering the old
+/// names immediately; the window lasts exactly as long as this function keeps the rule.
+///
+/// ⚠ Read the hop counter with this in mind: `urn:data:about` deliberately keeps one
+/// old-name marker as a live exhibit, so **this host's own home page fires the rule once
+/// per composition** and the counter can never fall to zero on its own. The closing
+/// signal is therefore "no hops beyond the page's own", and the exhibit and this rule are
+/// deleted in the same edit. The coupling runs the other way too, and is the reason the
+/// smoke gate covers it: `compose` propagates a failed marker, so deleting the rule while
+/// the marker stands does not degrade the about box — it takes the whole page down.
+fn alias_table() -> AliasTable {
+    AliasTable::new().prefix("urn:fn:", "urn:iki:fn:")
 }
 
 /// Live task counters behind the browser's scheduler readout — the wasm analogue of the
@@ -1491,7 +1547,7 @@ fn install_storage_watcher() {
 /// Returns a JSON string `{ kind, text, cache }`: `kind` is
 /// `output` | `error` | `help` | `quit` | `noop`; `cache` is the hit/miss tag
 /// (`computed`, `cached`, …) or empty. The page bootstrap calls this once with
-/// `source urn:fn:compose src=urn:data:page`; the `<ikigai-cli>` terminal calls it per line.
+/// `source urn:iki:fn:compose src=urn:data:page`; the `<ikigai-cli>` terminal calls it per line.
 #[wasm_bindgen(js_name = evalLine)]
 pub fn eval(line: String) -> String {
     ENGINE.with(|engine| eval_to_json(engine.eval(&line)))
@@ -1606,7 +1662,7 @@ fn request_from(verb: Verb, iri: &str, args_json: &str) -> std::result::Result<R
 pub fn encode_compose_call(src: String) -> Vec<u8> {
     let request = Request::new(
         Verb::Source,
-        Iri::parse("urn:fn:compose").expect("valid iri"),
+        Iri::parse("urn:iki:fn:compose").expect("valid iri"),
     )
     .with_arg("src", ArgRef::Inline(src.into_bytes()));
     ikigai_wire::encode(&ikigai_wire::Call::Issue(request)).expect("encode call")

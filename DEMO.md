@@ -18,12 +18,32 @@ Two repos: this one (`ikigai-web-demo`) for the browser demos, and a sibling
   every `$a{…}` transclusion marker. No fetch, no server.
 - Scroll to **the embedded terminal** — it's the *real* CLI engine compiled to
   WASM, driving the page's own kernel. Try:
-  - `source urn:fn:compose src=urn:data:page` → returns **the very page you're
+  - `source urn:iki:fn:compose src=urn:data:page` → returns **the very page you're
     looking at**, tagged `cached` (it shares the page's cache).
-  - `source urn:demo:split "a,b,c" .. urn:fn:toUpper` → `A` `B` `C` (the `..` map operator)
-  - `source urn:demo:split "x,y,z" | ( urn:fn:toUpper ; urn:fn:reverseList )` → fork/join
+  - `source urn:demo:split "a,b,c" .. urn:iki:fn:toUpper` → `A` `B` `C` (the `..` map operator)
+  - `source urn:demo:split "x,y,z" | ( urn:iki:fn:toUpper ; urn:iki:fn:reverseList )` → fork/join
   - `source urn:host:info` → **Embedded (Browser)** · `browser · wasm32` (the host names itself)
   - `list`, `help`
+
+**A namespace moving, live — the old names still resolve.** `ikigai-fn` 0.2.0 renamed the
+four names it owns from `urn:fn:*` to `urn:iki:fn:*` (one `urn:iki:` namespace for the whole
+ecosystem, because these graphs leave the process). The library installs no alias — binding
+authority is a host concern — so this host installs the rewrite table itself, in the same
+release that adopts the bump. In the terminal:
+
+- `source urn:fn:toUpper hello` → `HELLO`. The old name resolves, through the table.
+- `source urn:iki:fn:toUpper hello` → `HELLO`, tagged `cached` — the *same* entry. Both
+  names share one cache entry and one golden thread; the kernel adopts the backing name
+  before it computes the request id.
+- `list` shows only `urn:iki:fn:toUpper`. The catalog advertises the **new** name only, so
+  anything that discovers resources by reading it migrates itself, while everything still
+  holding an old name keeps working.
+- `source urn:kernel:aliases` → the installed rule and its live hop count.
+
+⚠ **Section 1 and section 2 below are the native `ikigai-cli` checkout, which has not
+adopted `ikigai-fn` 0.2.0 yet — there the names are still `urn:fn:*`.** That is the
+transition window itself: each host bumps the library and installs the alias in one release,
+at its own pace, with no flag day between them.
 
 **Files in the tab — `localStorage`-backed, shared with JavaScript.** The page mounts
 the `ikigai-fs` module at `urn:file:{path}`, jailed to a virtual `ws` root, on its
@@ -319,8 +339,11 @@ composes the page and streams the HTML back — first pull `computed`, second
 **The terminal in that page is live too** — each command is its own `ikigai-wire`
 Call on a fresh WebTransport stream, resolved by the remote kernel:
 - `list` — the resources bound *on the server*
-- `source urn:fn:toUpper hello` twice → `computed` then `cached` (the server's cache)
-- `cache urn:fn:toUpper hello` — is it cached, server-side? (no resolve)
+- `source urn:iki:fn:toUpper hello` twice → `computed` then `cached` (the server's cache)
+- `cache urn:fn:toUpper hello` — is it cached, server-side? (no resolve) — note the **old**
+  name: the probe canonicalizes exactly as the serving path does, so it answers `cached`
+  for an entry the new name filled. This server is `ikigai-net-server` from this repo, so
+  it runs the same kernel, with the same alias table, as demo 0.
 - `compose urn:data:page` — recompose the page over the wire
 - `source urn:host:info` → **Remote (WebTransport)** · `native · …` (the *server's* runtime)
 

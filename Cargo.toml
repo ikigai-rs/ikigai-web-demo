@@ -18,13 +18,24 @@ path = "src/bin/server.rs"
 # Published crates from crates.io (graduated off the sibling path deps once
 # ikigai-core/ikigai-vocab were published at 0.1.0). This demo is a standalone
 # proof, intentionally not part of either repo's CI.
-ikigai-core = "0.1.45"  # the Error TAXONOMY (Denied/NotFound/Timeout/Unavailable), which
-                        # decodeReply rebuilds from the wire's typed failure. 0.1.32 gave
-                        # the older need: urn:kernel:actions self-describes (Selection
-                        # demo routes types=).
+ikigai-core = "0.1.63"  # Kernel::with_aliases + AliasTable — the logical-rewrite table this
+                        # host installs so `urn:fn:*` keeps resolving after ikigai-fn 0.2.0
+                        # renamed its bindings to `urn:iki:fn:*`. A real floor: the API does
+                        # not exist below 0.1.63, and without it the bump below would ship
+                        # the demo with every `urn:fn:` name dead. (0.1.45 gave the older
+                        # need: the Error TAXONOMY — Denied/NotFound/Timeout/Unavailable —
+                        # which decodeReply rebuilds from the wire's typed failure.)
 # The reusable function library, linked in as a published module crate.
 # Compiled to wasm32 alongside this lib — the in-browser proof of module linkage.
-ikigai-fn = "0.1.2" # + urn:fn:conditional (the lazy branch: if/then/else are URIs)
+ikigai-fn = "0.2.0" # the namespace this library owns MOVED: urn:fn:* -> urn:iki:fn:*. A
+                    # module crate's resource names are its public interface, so a rename is
+                    # a minor bump even though the Rust API is untouched — a patch would be
+                    # adopted by a bare `cargo update` and take the old names out from under
+                    # a host that had not installed an alias. Adoption is deliberate, and
+                    # THIS is the edit in which the alias table appears too (src/lib.rs,
+                    # `build_kernel`); split them and `urn:fn:*` dies here.
+                    # (0.1.2 gave urn:iki:fn:conditional — the lazy branch: if/then/else
+                    # are URIs.)
 # The capability-gated file module, here on its wasm32 localStorage backend — the
 # browser proof that the same module serves files natively and in the page.
 ikigai-fs = "0.1.2"  # cacheable file Source (FileEndpoint::cacheable) for the golden thread
@@ -32,17 +43,21 @@ ikigai-vocab = "0.1"
 # The CLI's renderer-agnostic Engine — drives the in-page terminal — and its Resolver
 # seam. 0.1.4 is the async API (eval_async / issue_as_async) that lets the in-page
 # terminal drive the kernel on the JS event loop (M2).
-ikigai-engine = "0.1.13"  # the structured-Error migration. 0.1.9 was the newest published
+ikigai-engine = "0.1.17"  # tracks the ikigai-resolve 0.1.17 floor above (it re-exports the
+                          # Resolver seam this host drives). 0.1.13 gave the older need: the
+                          # structured-Error migration. 0.1.9 was the newest published
                           # version for a month and does not compile against a current
                           # ikigai-core; engine skipped 0.1.10-0.1.12, so 0.1.13 is at once
                           # the fix and the true minimum. (0.1.9 gave the older need:
                           # quote-aware named args — title="two words" — + pipe routing.)
-ikigai-resolve = "0.1.14"  # SpanCollector + issue_traced_as (the server answers
-                           # Call::IssueTraced) — ours since 0.1.10. The pin sits above
-                           # our own need because ikigai-time raises the floor; where that
-                           # floor lands is Cargo's business and Cargo.lock's record, not
-                           # a number restated here (the last restatement went false the
-                           # moment ikigai-time was bumped).
+ikigai-resolve = "0.1.17"  # ★ the version that COMPILES against ikigai-core 0.1.64+, which
+                           # added a `canonical` field to `Resolved`. Every crate that builds
+                           # that struct literally (rather than through a constructor) stops
+                           # compiling — a SOURCE break arriving in a patch, which a bare
+                           # `cargo update` adopts. Raised here because the core pin above is
+                           # a caret and Cargo takes 0.1.65. (0.1.14 gave the older need:
+                           # SpanCollector + issue_traced_as — the server answers
+                           # Call::IssueTraced — ours since 0.1.10.)
 # The on-wire Call/Reply protocol — the WASM codec (network demo) speaks it in the
 # browser, and the server speaks it on the other end. Same bytes as ikigai-ipc/quic.
 # Also reused for the module-session codec (encode/decode of ModuleCall/ModuleReply).
@@ -51,11 +66,13 @@ ikigai-wire = "0.1.10"  # wire v7: WireError + Reply::ErrorTyped (a failure cros
 # The dynamically-loadable module format. The host mounts the lazy XSLT module as a generic
 # WasmModuleSpace and services its HostCalls with serve_host_call; the session protocol + the
 # provenance sink live in the crate (the module runs run_session in its own wasm).
-ikigai-module = "0.1.8"  # SpaceEntry::new — 0.1.7 built the struct literally and so lost
-                         # the `origin` field ikigai-core 0.1.46 added; 0.1.8 is the only
-                         # version above it, so it is the fix and the minimum both.
-                         # (0.1.7 gave with_endpoint(): lazy modules enumerate into the
-                         # catalog.)
+ikigai-module = "0.1.10"  # the same source break as ikigai-resolve above: `Resolved` gained
+                          # a `canonical` field in ikigai-core 0.1.64 and this crate built it
+                          # literally. Twice now for the same reason — 0.1.7 lost the `origin`
+                          # field ikigai-core 0.1.46 added, in exactly this way — so the
+                          # PATTERN is the finding, not either incident. (0.1.8 gave the older
+                          # need: SpaceEntry::new, and with_endpoint() so lazy modules
+                          # enumerate into the catalog.)
 # Outbound HTTP-client module (urn:httpGet…). Already async + executor-agnostic
 # (HttpTransport seam), so the browser supplies a `fetch`-backed transport — same
 # module the native CLI drives with ureq. Unchanged for M2, so straight from crates.io.
