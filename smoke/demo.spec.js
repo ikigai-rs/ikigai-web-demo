@@ -336,10 +336,15 @@ test('the passkey ceremony asks the authenticator, and can still register', asyn
 // That claim is only worth the running of it. Each assertion below is one of ikigai-core's
 // alias decisions, checked against the built wasm in a browser rather than trusted:
 //
-//   decision 3 — the two names share ONE cache entry and one golden thread. Proved on the
-//                SERVING path (the second name comes back `cached`, not recomputed) and on
-//                the readout (the Cache card grows by one entry, not two, and lists the
-//                backing name only).
+//   decision 3 — the two names share ONE cache entry. Proved on the SERVING path (the
+//                second spelling comes back `cached`, not recomputed), on the read-only
+//                probe, and on the readout (every entry the page and this test created
+//                under BOTH spellings is listed under the backing name, and none under the
+//                logical one). The other half of decision 3 — one golden thread, so a
+//                `Sink` through either name cuts the other — is NOT exercised here: it
+//                follows from the same identity point (the id is derived after the rewrite
+//                is adopted), but every `urn:iki:fn:*` endpoint is Source-only, so this
+//                host has no sinkable resource in that namespace to cut.
 //   decision 4 — the catalog advertises the NEW name only, which is what makes a
 //                catalog-driven consumer migrate itself while an old-name holder keeps
 //                working. `list` must show one and not the other.
