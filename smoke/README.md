@@ -73,7 +73,11 @@ terminal and reads the Control panel:
 - the **catalog offers the new name only** (`list`), which is what makes a catalog-driven
   consumer migrate itself while an old-name holder keeps working;
 - the rewrite survives **nested** resolution: `urn:data:about` keeps one old-name marker
-  on purpose, two levels down inside the composed page, and its text must render.
+  on purpose, two levels down inside the composed page, and its text must render;
+- a **linked module's baked-in old name** still runs: `ikigai-runbook` 0.1.13 hardcodes
+  `source urn:fn:toUpper hello` as a Basics step, and this host cannot edit it — it is a
+  published crate. That is the case the window exists for, and the reason the table belongs
+  to the host rather than the library: it covers content the host does not control.
 
 ⚠ That last one couples the page to the rule: `compose` propagates a failed marker, so the
 exhibit and the alias rule are deleted in the same edit or the whole page dies.

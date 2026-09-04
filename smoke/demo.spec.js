@@ -428,6 +428,16 @@ test('the old urn:fn: names still resolve, through the host alias table', async 
   // substring that the new name happens to satisfy.
   expect(list, 'the catalog must not offer the pre-migration names').not.toContain('urn:fn:');
 
+  // --- A LINKED MODULE's baked-in old names still run -----------------------
+  // `ikigai-runbook` 0.1.13 hardcodes `source urn:fn:toUpper hello` as a Basics step, and
+  // this host cannot edit it — it is a published crate. That step working is the case the
+  // window actually exists for: content the host does not control, still holding the old
+  // name, resolving anyway because the alias lives in the HOST rather than the library.
+  await toolbar.getByRole('button', { name: 'Demo', exact: true }).click();
+  await page.getByRole('tab', { name: 'Basics', exact: true }).click();
+  await page.getByRole('button', { name: 'uppercase' }).click();
+  await expect(page.locator('#rb-out')).toContainText('HELLO');
+
   // --- The Cache card: one entry for two names -----------------------------
   await toolbar.getByRole('button', { name: 'Control', exact: true }).click();
   const cacheCard = page.locator('#ctl-cards pre.ctl-readout').nth(1);
