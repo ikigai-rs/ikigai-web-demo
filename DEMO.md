@@ -40,10 +40,35 @@ release that adopts the bump. In the terminal:
   holding an old name keeps working.
 - `source urn:kernel:aliases` → the installed rule and its live hop count.
 
-⚠ **Section 1 and section 2 below are the native `ikigai-cli` checkout, which has not
-adopted `ikigai-fn` 0.2.0 yet — there the names are still `urn:fn:*`.** That is the
-transition window itself: each host bumps the library and installs the alias in one release,
-at its own pace, with no flag day between them.
+**And now watch it close.** `ikigai-fn` 0.2.0 published on 2026-09-04; this host adopted it
+half an hour later, and `ikigai-cli` three days after that, in 0.1.18 — each on its own
+release cadence, nobody blocked, no flag day. That is the whole job the rule was hired for,
+and it is done. What the table protects *now* is different: not other hosts, but names
+written down where no host can reach them. `ikigai-runbook` 0.1.13 is a published crate this
+page links, and it hardcodes `source urn:fn:toUpper hello` as a Basics step — so the demo's
+own Basics tab resolves through the alias every time someone runs that step.
+
+So: **when do you delete the rule?** The catalog has already done the part that can be
+automated — `list` offers only the new names, so anything that *discovers* resources has
+migrated itself. What is left is bookmarks, pasted transcripts and linked crates, invisible
+by construction. The hop counter cannot close the loop either: the page's own about box fires
+the rule once per composition **on purpose**, so it never falls to zero and the honest reading
+is "no hops beyond the page's own". A window like this comes down on a schedule, because
+there is no signal that says the last old name has arrived.
+
+⚠ **Sections 1 and 2 below are transcripts from the native `ikigai-cli` checkout at
+0.1.17** — the last release before it adopted `ikigai-fn` 0.2.0, so there the names really
+were `urn:fn:*`. On `ikigai-cli` 0.1.18 and later every command in them still runs verbatim,
+through that host's own copy of the same rewrite rule; what changes is what the kernel
+*reports back*. `list` offers only `urn:iki:fn:*`, `urn:kernel:constraint` names
+`urn:iki:fn:compose`, and `trace` heads its tree with the backing name and says which hop
+got it there:
+
+```
+urn:iki:fn:compose   compose · computed · main · 1ms · alias=urn:fn:compose -> urn:iki:fn:compose
+```
+
+Read a transcript's spelling as the names that host was on, not as the names it accepts.
 
 **Files in the tab — `localStorage`-backed, shared with JavaScript.** The page mounts
 the `ikigai-fs` module at `urn:file:{path}`, jailed to a virtual `ws` root, on its
@@ -102,6 +127,9 @@ as capability-gated resources, resolved intrinsically (before any space):
   `urn:kernel:threads` after you write it.
 
 ## 1. The terminal CLI — from the `ikigai-cli` checkout
+
+*(Transcripts below were captured on `ikigai-cli` 0.1.17. They still run verbatim on
+0.1.18+, which prints `urn:iki:fn:*` back — see the note at the end of section 0.)*
 
 ```bash
 cargo run --bin ikigai          # full-screen TUI REPL

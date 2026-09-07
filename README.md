@@ -32,9 +32,19 @@ rewrite table (`Kernel::with_aliases`) in the same release that adopts the bump.
 back `cached` off the *same* entry — one cache entry and one golden thread for both names —
 and `list` advertises only the new one, so anything that discovers resources by reading the
 catalog migrates itself. `source urn:kernel:aliases` reads the table back out with a live
-hop count, which is what tells an operator when the old name has stopped arriving and the
-rule can go. The about box on the page is the proof in situ: its inner marker still names
+hop count. The about box on the page is the proof in situ: its inner marker still names
 `urn:fn:toUpper`, two levels down inside a composed page, and renders anyway.
+
+**And the window is now closing, which is the more interesting half.** `ikigai-fn` 0.2.0
+published on 2026-09-04, this host adopted it within the hour, and `ikigai-cli` followed
+three days later in 0.1.18 with a table of its own — each at its own cadence, no flag day,
+which is exactly what the rule was for. With the other hosts across, the table stops
+protecting *hosts* and starts protecting names written down where a host cannot reach them:
+`ikigai-runbook` 0.1.13 is a published crate this page links, and it hardcodes `source
+urn:fn:toUpper hello`. Which poses the question the exhibit is really about — *when do you
+delete an alias?* Discovery has already migrated itself, and the hop count cannot answer,
+because the about box fires the rule once per composition on purpose and so it never reaches
+zero. A rule like this comes out on a schedule, not on a signal.
 
 A row of **ZeroTrust** buttons above the terminal walks the capability story, enforced
 client-side in WASM: `cap read-only` narrows the session to a *read* scope, after which a
