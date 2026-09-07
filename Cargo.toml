@@ -34,6 +34,11 @@ ikigai-fn = "0.2.0" # the namespace this library owns MOVED: urn:fn:* -> urn:iki
                     # a host that had not installed an alias. Adoption is deliberate, and
                     # THIS is the edit in which the alias table appears too (src/lib.rs,
                     # `build_kernel`); split them and `urn:fn:*` dies here.
+                    # This host adopted 0.2.0 first (2026-09-04); `ikigai-cli` followed in
+                    # 0.1.18 with a table of its own. The library still installs none —
+                    # that is the design, not a lag. What the rule protects from here on is
+                    # content no host controls: `ikigai-runbook` 0.1.13 below still
+                    # hardcodes `source urn:fn:toUpper hello`.
                     # (0.1.2 gave urn:iki:fn:conditional — the lazy branch: if/then/else
                     # are URIs.)
 # The capability-gated file module, here on its wasm32 localStorage backend — the
@@ -103,6 +108,10 @@ ikigai-runbook = "0.1.13"  # hide_tab(): the subtractive mirror of add_tab, so a
                            # answered "no endpoint resolved for urn:lisp:eval" on every
                            # step. (0.1.10 gave the older need: the Basics tab's
                            # urn:fn:conditional branch (lazy) example.)
+                           # ⚠ 0.1.13 published 2026-09-03, hours before ikigai-fn 0.2.0
+                           # (2026-09-04) renamed the namespace, so its steps still spell
+                           # `urn:fn:*`. They run here only through the alias table above —
+                           # this is the concrete reason the rule outlives the migration.
 # RDF transreption module (urn:rdf:transrept) from the ikigai-linkeddata workspace —
 # parses an RDF syntax and re-serializes to another (or to an HTML table), client-side
 # in wasm. The catalog + FOAF render to HTML through this. (SPARQL deferred to a later
