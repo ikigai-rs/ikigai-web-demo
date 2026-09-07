@@ -39,7 +39,25 @@ ikigai-fn = "0.2.0" # the namespace this library owns MOVED: urn:fn:* -> urn:iki
 # The capability-gated file module, here on its wasm32 localStorage backend — the
 # browser proof that the same module serves files natively and in the page.
 ikigai-fs = "0.1.2"  # cacheable file Source (FileEndpoint::cacheable) for the golden thread
-ikigai-vocab = "0.1"
+ikigai-vocab = "0.1.22"  # ★ the version that added `space()` — `urn:ikigai:vocab`, the ns#
+                         # ontology as a resolvable resource (ikigai-core #41, "Slice 1").
+                         # AUDITED 2026-09-06, and the old bare `0.1` was a FALSE floor: it
+                         # admitted 0.1.0/0.1.1, which have no `space()` at all, so a
+                         # minimal-version resolve would not compile. Proven by compiling
+                         # this crate's entire vocab surface — `use TurtleRenderer` +
+                         # `TurtleRenderer.render` inside an `impl MetaRenderer` +
+                         # `Arc::new(space()) as Arc<dyn Space>` — against every published
+                         # `=<version>` from 0.1.0 up: 0.1.0/0.1.1 fail with E0425 (no
+                         # `space`), 0.1.22 and everything above compile against ikigai-core
+                         # 0.1.65. 0.1.22 is also the BEHAVIORAL floor: the same release
+                         # taught TurtleRenderer to type a transreptor `a ik:Endpoint,
+                         # ik:Transreptor` with ik:transreptsFrom/To, and CATALOG_CARDS_XSL
+                         # (src/lib.rs) matches on exactly those. Verified by rendering a
+                         # transreptor Description under =0.1.22 and asserting all nine terms
+                         # the stylesheet reads (ik:Endpoint/Transreptor/id/title/summary/
+                         # verb/output/transreptsFrom/transreptsTo) are emitted.
+                         # RE-AUDIT when the catalog stylesheet reads a new ik: term, or when
+                         # this file starts using a vocab item beyond those two.
 # The CLI's renderer-agnostic Engine — drives the in-page terminal — and its Resolver
 # seam. 0.1.4 is the async API (eval_async / issue_as_async) that lets the in-page
 # terminal drive the kernel on the JS event loop (M2).
@@ -117,7 +135,24 @@ ikigai-xslt = "0.1.0"
 ikigai-jsonld = "0.1.1"  # compact sources a context-by-reference
 # SHACL validation linked natively (rudof; native-only). On wasm the browser serves
 # urn:shacl:validate via the JS shacl-engine (dist/shacl-loader.js) instead.
-ikigai-shacl = "0.1.0"
+ikigai-shacl = "0.1.1"  # ★ 0.1.0 IS NOT BUILDABLE, so it was never a true floor. Its
+                        # `shacl = "0.3"` caret admits rudof 0.3.17+, and 0.3.17 added a third
+                        # argument (`&ShaclConfig`) to `validate()` — a SOURCE break shipped in
+                        # a PATCH release. Measured 2026-09-06 by resolving this crate from
+                        # scratch with the pin forced to `=0.1.0`: E0061, "this method takes 3
+                        # arguments but 2 arguments were supplied", at ikigai-shacl-0.1.0
+                        # src/lib.rs:141 against shacl 0.3.18. 0.1.1 is the same code with real
+                        # upper bounds (rudof_rdf/shacl/sparql_service >=0.3.17, <0.3.19).
+                        #
+                        # Two things hid this. (a) We commit Cargo.lock, so fmt/clippy/test/CI
+                        # all build the FROZEN graph — the lock held shacl 0.3.7, where the old
+                        # call site is fine — and no gate here can ever see upstream breakage;
+                        # only a lockless resolve does. (b) The caret then papered over it: a
+                        # fresh resolve of the old `"0.1.0"` requirement picks 0.1.1 and builds,
+                        # so the window closed on its own the moment 0.1.1 published. What is
+                        # left is the false floor, and the committed lock still pinning a
+                        # version that cannot build in a current graph — which matters because
+                        # this repo DEPLOYS to Pages off that lock.
 
 # wasm-only: the cross-tab `storage` event, used to cut golden threads when another
 # tab (or page JS) changes a workspace file — the browser's filesystem watcher.
