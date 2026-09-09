@@ -3,7 +3,7 @@
 //! One in-page [`Kernel`] binds the demo endpoints, the `compose` builtin, and the
 //! page shapes, behind a meta renderer that also projects each endpoint's
 //! self-description to `application/json`. The CLI's renderer-agnostic
-//! [`Engine`](ikigai_engine::Engine) drives that kernel; [`evalLine`] runs one REPL
+//! [`Engine`](ikigai_engine::Engine) drives that kernel; the exported `evalLine` runs one REPL
 //! line through it. Both the composed page and the in-page terminal go through the
 //! same Engine, so they share one resource space and one content-addressed cache.
 //!
@@ -319,7 +319,7 @@ const ABOUT_HTML: &str = r#"<aside class="about">
 </aside>"#;
 
 /// `urn:demo:web-cli` — the terminal mount. Transcluded into the page; the
-/// `<ikigai-cli>` custom element self-wires on insertion and drives [`evalLine`].
+/// `<ikigai-cli>` custom element self-wires on insertion and drives the exported `evalLine`.
 const WEB_CLI_HTML: &str = r#"<section class="cli-mount">
   <h3>The same CLI, in your browser</h3>
   <p class="sub">This terminal runs the very same renderer-agnostic Engine as the desktop
