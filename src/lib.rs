@@ -23,6 +23,13 @@ use ikigai_vocab::TurtleRenderer;
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 
+/// An XSD datatype IRI for a scalar input's `class` — the manifold's answer to "what
+/// shape is this argument", which `urn:kernel:validate` checks before a call and the
+/// conformance walk holds every input to.
+fn xsd(datatype: &str) -> String {
+    format!("http://www.w3.org/2001/XMLSchema#{datatype}")
+}
+
 /// A demo endpoint with a rich self-description. It greets you from the browser.
 struct Greeter;
 
@@ -63,8 +70,19 @@ fn clock_now() -> FnEndpoint {
     FnEndpoint::new("clock-now", |inv: &Invocation<'_>| {
         // `html=true` wraps the colon in a span so the nav can blink it (text/html);
         // the default is plain HH:MM (text/plain) — so the Control-plane clock job's
-        // `last:` readout stays clean instead of showing raw markup.
-        let html = inv.inline_str("html").is_ok();
+        // `last:` readout stays clean instead of showing raw markup. The input is
+        // declared `xsd:boolean`, so it is READ as one: `html=false` is the plain face,
+        // not (as before, when presence alone selected it) the markup.
+        let html = match inv.inline_str("html") {
+            Ok("true") => true,
+            Ok("false") | Err(_) => false,
+            Ok(other) => {
+                return Err(Error::InvalidArgument {
+                    name: "html".to_string(),
+                    detail: format!("expected true or false, got `{other}`"),
+                })
+            }
+        };
         #[cfg(target_family = "wasm")]
         let (h, m, now_ms) = {
             // js_sys::Date getters are LOCAL-timezone — "localized to the browser".
@@ -116,9 +134,12 @@ fn clock_now() -> FnEndpoint {
                     .summary(
                         "html=true wraps the colon in a span for the nav (default: plain HH:MM)",
                     )
+                    .class(xsd("boolean"))
+                    .default_value("false")
                     .optional(),
             )
-            .output("text/plain;charset=utf-8"),
+            .output("text/plain;charset=utf-8")
+            .output("text/html;charset=utf-8"),
     )
 }
 
@@ -568,8 +589,13 @@ fn runbook_timer() -> FnEndpoint {
 }
 
 /// `urn:data:catalog.rdf` — the kernel's catalog as RDF/XML, a resource. It resolves
-/// `urn:kernel:catalog` (Turtle) through the kernel and transrepts it, so this resource
-/// depends on the catalog's golden thread and is cacheable. The Catalog page's XSLT cards
+/// `urn:kernel:catalog` (Turtle) through the kernel and transrepts it, so it is exactly as
+/// cacheable as the catalog: `Expiry::Never` with NO golden thread, because the catalog is
+/// a function of the bound space, which is fixed for the kernel's life (core marks it
+/// cacheable and threadless; the cache keys on the capability fingerprint, so two
+/// authorities never share an entry). Reading the catalog needs `urn:cap:kernel:inspect`,
+/// and this endpoint declares it: a session without the grant is told so by the manifold
+/// rather than discovering it as a `Denied` mid-resolution. The Catalog page's XSLT cards
 /// reference it as their `src` — both src and stylesheet are named, cacheable resources.
 struct CatalogRdf;
 
@@ -602,6 +628,10 @@ impl Endpoint for CatalogRdf {
             )
             .verb(Verb::Source)
             .verb(Verb::Meta)
+            // The scope the sub-resolution of `urn:kernel:catalog` enforces. Declared
+            // here so the manifold does not over-offer: before this the walk found the
+            // endpoint "declares no capability but refused with `Denied` under no grants".
+            .requires("urn:cap:kernel:inspect")
             .output("application/rdf+xml")
     }
 }
@@ -666,10 +696,25 @@ mod xslt_module {
             )
             .verb(Verb::Source)
             .verb(Verb::Meta)
-            .input(ArgSpec::new("src").summary("the source XML/RDF-XML resource IRI"))
-            .input(ArgSpec::new("stylesheet").summary("the XSLT stylesheet resource IRI"))
-            .input(ArgSpec::new("as").summary("output media type (default text/html)"))
+            .input(
+                ArgSpec::new("src")
+                    .summary("the source XML/RDF-XML resource IRI")
+                    .class(xsd("anyURI")),
+            )
+            .input(
+                ArgSpec::new("stylesheet")
+                    .summary("the XSLT stylesheet resource IRI")
+                    .class(xsd("anyURI")),
+            )
+            .input(
+                ArgSpec::new("as")
+                    .summary("output media type (default text/html)")
+                    .class(xsd("string"))
+                    .default_value("text/html")
+                    .optional(),
+            )
             .output("text/html;charset=utf-8")
+            .output("text/plain;charset=utf-8")
             // Mirror the module's own marking (ikigai-xslt): a parameterized
             // ik:Transreptor — needs a `stylesheet`, so it's not auto-invocable.
             .transreptor(
@@ -752,12 +797,17 @@ mod jsonld_module {
             .output("application/ld+json")
     }
 
+    // `xsd:string` is the wire's type for a document, not the value's (the same honest
+    // widening ikigai-sniff and ikigai-jsonld state for opaque or structured bytes).
     fn content_input() -> ArgSpec {
-        ArgSpec::new("content").summary("the JSON-LD document — usually piped in")
+        ArgSpec::new("content")
+            .summary("the JSON-LD document — usually piped in")
+            .class(xsd("string"))
     }
     fn base_input() -> ArgSpec {
         ArgSpec::new("base")
             .summary("optional base IRI for relative references")
+            .class(xsd("anyURI"))
             .optional()
     }
 
@@ -794,7 +844,15 @@ mod jsonld_module {
             .verb(Verb::Source)
             .verb(Verb::Meta)
             .input(content_input())
-            .input(ArgSpec::new("context").summary("the JSON-LD context to compact against"))
+            // Inline JSON or a resource IRI — a union no ArgSpec can spell, so the wire's
+            // type again (ikigai-jsonld's own card says the same).
+            .input(
+                ArgSpec::new("context")
+                    .summary(
+                        "the JSON-LD context to compact against: inline JSON or a resource IRI",
+                    )
+                    .class(xsd("string")),
+            )
             .input(base_input())
             .output("application/ld+json")
     }
@@ -931,18 +989,29 @@ mod shacl_module {
                 .verb(Verb::Meta)
                 .input(
                     ArgSpec::new("data")
-                        .summary("the RDF data graph to validate — usually piped in"),
+                        .summary("the RDF data graph to validate — usually piped in")
+                        .class(xsd("string")),
                 )
                 .input(
-                    ArgSpec::new("shapes").summary(
-                        "the SHACL shapes graph: inline Turtle or a resolvable resource IRI",
-                    ),
+                    ArgSpec::new("shapes")
+                        .summary(
+                            "the SHACL shapes graph: inline Turtle or a resolvable resource IRI",
+                        )
+                        .class(xsd("string")),
                 )
-                .input(ArgSpec::new("as").summary(
-                    "report representation: text/turtle (default, the report graph) or \
-                     application/json",
-                ))
+                .input(
+                    ArgSpec::new("as")
+                        .summary(
+                            "report representation: text/turtle (default, the report graph) \
+                             or application/json",
+                        )
+                        .class(xsd("string"))
+                        .one_of(["text/turtle", "application/json"])
+                        .default_value("text/turtle")
+                        .optional(),
+                )
                 .output("text/turtle;charset=utf-8")
+                .output("application/json;charset=utf-8")
         }
     }
 
@@ -967,6 +1036,16 @@ fn shacl_space() -> Arc<dyn Space> {
 /// they share a space and a cache. Public so the WebTransport server
 /// (`src/bin/server.rs`) resolves against the same space — with its own nature.
 pub fn build_kernel(nature: &'static str) -> Kernel {
+    build_kernel_in(nature, "ws")
+}
+
+/// [`build_kernel`] with the file module's jail root chosen by the caller. In the page
+/// the root is the virtual `ws` segment of `localStorage`; on native it is a directory
+/// relative to the process, and a test that walks the kernel — the conformance suite
+/// FIRES `Sink` and `Delete` on `urn:file:*` — must hand it a scratch directory rather
+/// than write beside the sources. Everything else is identical: same spaces, same
+/// renderer, same alias table.
+pub fn build_kernel_in(nature: &'static str, file_root: impl Into<std::path::PathBuf>) -> Kernel {
     // Register the browser-only Identity tab so the shared runbook strip lists it
     // (idempotent). Its panel is `urn:runbook:identity`, bound below.
     ikigai_runbook::add_tab("identity", "Identity");
@@ -1078,7 +1157,7 @@ pub fn build_kernel(nature: &'static str) -> Kernel {
             // Cacheable: a localStorage read caches under a golden thread, and a
             // `sink` (kernel auto-cut) invalidates it — so the browser shows the
             // golden thread, the same as the native CLI.
-            ikigai_fs::FileEndpoint::new("ws").cacheable(),
+            ikigai_fs::FileEndpoint::new(file_root).cacheable(),
         );
     // The root is a Fallback over the local space, then the HTTP module on a
     // `fetch`-backed transport — so `urn:httpGet url=…` resolves against the live web
@@ -1127,7 +1206,7 @@ pub fn build_kernel(nature: &'static str) -> Kernel {
     // kernel's subclass closure, so type-aware action selection (urn:kernel:actions) reasons
     // over the hierarchy — a foaf:Person entity satisfies a schema:Person action.
     Kernel::with_meta_renderer(root, Arc::new(JsonOrTurtle))
-        .with_clock(Arc::new(BrowserClock))
+        .with_clock(host_clock())
         .with_subclass_axioms(ikigai_rdf::subclass_axioms(ikigai_runbook::ALIGNMENT_TTL))
         // The transition window for `ikigai-fn`'s namespace move. See `alias_table`.
         .with_aliases(Arc::new(alias_table()))
@@ -1249,11 +1328,29 @@ impl ikigai_core::SchedulerReporter for WasmSpawner {
 /// A `Date.now()`-backed [`Clock`] for the browser kernel — the wasm analogue of the
 /// native `SystemClock` (`std::time` panics on `wasm32-unknown-unknown`). Lets HTTP
 /// `max-age` deadlines and the constraint readout's timing work in the tab.
+#[cfg(target_family = "wasm")]
 struct BrowserClock;
+#[cfg(target_family = "wasm")]
 impl Clock for BrowserClock {
     fn now(&self) -> Time {
         Time::from_millis(js_sys::Date::now() as u64)
     }
+}
+
+/// The kernel's clock for the target this lib is compiled for. `BrowserClock` in the
+/// page; `SystemClock` on native. Before this split the native server injected
+/// `BrowserClock` too, and a `js_sys` import called off wasm is not a wrong answer but a
+/// PANIC ("cannot call wasm-bindgen imported functions on non-wasm targets") — the first
+/// resolution to consult the clock (`urn:time:now`'s `Expiry::At`, an HTTP `max-age`)
+/// would have taken the server task down. Nothing had ever asked the native kernel for
+/// the time until the conformance walk did.
+#[cfg(target_family = "wasm")]
+fn host_clock() -> Arc<dyn Clock> {
+    Arc::new(BrowserClock)
+}
+#[cfg(not(target_family = "wasm"))]
+fn host_clock() -> Arc<dyn Clock> {
+    Arc::new(ikigai_core::SystemClock)
 }
 
 /// The browser's [`HttpTransport`](ikigai_http::HttpTransport): performs requests with
@@ -1264,6 +1361,7 @@ struct BrowserFetchTransport;
 
 #[async_trait]
 impl ikigai_http::HttpTransport for BrowserFetchTransport {
+    #[cfg(target_family = "wasm")]
     async fn send(
         &self,
         request: ikigai_http::HttpRequest,
@@ -1273,6 +1371,17 @@ impl ikigai_http::HttpTransport for BrowserFetchTransport {
             let _ = tx.send(browser_fetch(request).await);
         });
         rx.await.map_err(|_| "fetch task was dropped".to_string())?
+    }
+
+    // Off wasm the stub answers directly: `spawn_local` is a wasm-bindgen import and
+    // PANICS when called natively, so before this the native server's first granted
+    // `urn:httpGet` took its task down instead of returning the stub's error.
+    #[cfg(not(target_family = "wasm"))]
+    async fn send(
+        &self,
+        request: ikigai_http::HttpRequest,
+    ) -> std::result::Result<ikigai_http::HttpResponse, String> {
+        browser_fetch(request).await
     }
 }
 
@@ -1495,9 +1604,18 @@ thread_local! {
         // path-ACL (`urn:cap:fs:write:…` is not granted) — capability attenuation,
         // enforced in the browser. The jail (`..` segments) is the harder floor
         // beneath it, refused even at root.
-        engine.define_cap_profile("read-only", ["urn:cap:fs:read:ws"]);
+        define_cap_profiles(&engine);
         Rc::new(engine)
     };
+}
+
+/// The friendly capability profiles the in-page terminal offers — `cap read-only` is
+/// the one the ZeroTrust walkthrough names. Public so a test drives the profile the page
+/// installs rather than a copy of its scope list: the `/k/` adapter runs every runbook
+/// step under the session capability, and "a step naming a gated resource is refused
+/// under `read-only`" is only worth pinning against the real profile.
+pub fn define_cap_profiles(engine: &ikigai_engine::Engine) {
+    engine.define_cap_profile("read-only", ["urn:cap:fs:read:ws"]);
 }
 
 /// Set a readable panic hook so Rust panics show up in the browser console.

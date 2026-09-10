@@ -1387,10 +1387,23 @@ dependencies = [
 ]
 
 [[package]]
-name = "ikigai-core"
-version = "0.1.65"
+name = "ikigai-conformance"
+version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e4c80d75af4ef1204d89fa740bfd9ae77984272667759a858df51228c3eca45"
+checksum = "26f36438880320dd8380c0afc2eca66f89595892aa6990c37b0967020b37c497"
+dependencies = [
+ "futures",
+ "ikigai-core",
+ "ikigai-vocab",
+ "oxrdf",
+ "oxrdfio",
+]
+
+[[package]]
+name = "ikigai-core"
+version = "0.1.67"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "709099c9ca1f2e408ea46255c0f0240f4bfb3305afb7f48d0793b76233edaabc"
 dependencies = [
  "async-trait",
  "blake3",
@@ -1547,9 +1560,9 @@ dependencies = [
 
 [[package]]
 name = "ikigai-vocab"
-version = "0.1.54"
+version = "0.1.68"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "94fedeb13f0e2c2f4f8e0526baa4fede2e918676408b1db43bfa9b7553d7e652"
+checksum = "62b58ea8c71461bbfdd1eaa938fc1e14ff5ef44fe084fb2f0a4acb13277c36a8"
 dependencies = [
  "ikigai-core",
  "serde_json",
@@ -1562,6 +1575,7 @@ dependencies = [
  "async-trait",
  "console_error_panic_hook",
  "futures",
+ "ikigai-conformance",
  "ikigai-core",
  "ikigai-engine",
  "ikigai-fn",
@@ -1580,6 +1594,7 @@ dependencies = [
  "ikigai-xslt",
  "js-sys",
  "serde_json",
+ "tempfile",
  "tokio",
  "wasm-bindgen",
  "wasm-bindgen-futures",

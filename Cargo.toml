@@ -181,6 +181,17 @@ web-sys = { version = "0.3", features = [
     "Request", "RequestInit", "Response", "Headers",
 ] }
 
+[dev-dependencies]
+# The module recipe as one test (tests/conformance.rs): walks every endpoint this host
+# binds, natively, over the same kernel the page composes. 0.1.0 is the published
+# contract; 0.1.1 is unpublished and not chased. Pulls ikigai-core 0.1.67 and ikigai-vocab
+# 0.1.66+ (0.1.68 resolved) into the lock, its own floors; the pinned crates above compile
+# against them.
+ikigai-conformance = "0.1.0"
+# A scratch jail for the file module: the walk FIRES Sink/Delete, and the native
+# backend is std::fs, so the fixture must never be this repo's tree.
+tempfile = "3"
+
 [profile.release]
 opt-level = "z"
 lto = true

@@ -128,6 +128,18 @@ WebTransport's `serverCertificateHashes` (no CA), so paste the current hash.
 Needs Chrome/Edge (or recent Firefox). It isn't on GitHub Pages — Pages is
 static-only, and this needs a running server — so it's run-it-yourself.
 
+## Conformance
+
+The host passes [`ikigai-conformance`](https://crates.io/crates/ikigai-conformance) —
+the module recipe as one test (`tests/conformance.rs`), run natively over the same kernel
+the page composes: every endpoint this crate binds has typed inputs, declared faces and
+scopes, and its cacheability pinned (constants cached forever, live session state never,
+the clock until the next minute). The crates it composes are walked too; their findings at
+the pinned versions are recorded, not waived, and drop as each publishes its conformant
+release. `tests/k_adapter.rs` runs the runbook's own steps through the `/k/` adapter under
+the session capability — the write a `read-only` session or another identity's segment
+refuses is a typed `Denied`, before anything touches the disk.
+
 ## What's in here
 
 - `src/lib.rs` — the in-browser kernel: binds the demo endpoints (incl. `compose`)
