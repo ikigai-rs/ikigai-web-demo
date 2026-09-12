@@ -187,7 +187,7 @@ web-sys = { version = "0.3", features = [
 # contract; 0.1.1 is unpublished and not chased. Pulls ikigai-core 0.1.67 and ikigai-vocab
 # 0.1.66+ (0.1.68 resolved) into the lock, its own floors; the pinned crates above compile
 # against them.
-ikigai-conformance = "0.1.0"
+ikigai-conformance = "0.2.0"
 # A scratch jail for the file module: the walk FIRES Sink/Delete, and the native
 # backend is std::fs, so the fixture must never be this repo's tree.
 tempfile = "3"
