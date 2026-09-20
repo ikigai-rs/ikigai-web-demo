@@ -1616,9 +1616,9 @@ dependencies = [
 
 [[package]]
 name = "ikigai-xslt"
-version = "0.1.1"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "198f41392fa130491847c14e48ca24d06467f991929605ab73507b6a7a1d2ea3"
+checksum = "2bff3a34625f21bc3540d21158d0a7f8dd58ec2a7b3029dcfe8b6e2e26acd3ff"
 dependencies = [
  "async-trait",
  "ikigai-core",
