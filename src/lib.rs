@@ -590,10 +590,11 @@ fn runbook_timer() -> FnEndpoint {
 
 /// `urn:data:catalog.rdf` — the kernel's catalog as RDF/XML, a resource. It resolves
 /// `urn:kernel:catalog` (Turtle) through the kernel and transrepts it, so it is exactly as
-/// cacheable as the catalog: `Expiry::Never` with NO golden thread, because the catalog is
-/// a function of the bound space, which is fixed for the kernel's life (core marks it
-/// cacheable and threadless; the cache keys on the capability fingerprint, so two
-/// authorities never share an entry). Reading the catalog needs `urn:cap:kernel:inspect`,
+/// cacheable as the catalog: `Expiry::Never`, invalidated by whatever invalidates the
+/// catalog, because the catalog is a function of the bound space (the cache keys on the
+/// capability fingerprint, so two authorities never share an entry). Its golden threads
+/// are the catalog's — `urn:kernel:bindings` on current core, none before ledger #510 —
+/// plus, since core 0.1.73, the own names of the cacheable steps it composes. Reading the catalog needs `urn:cap:kernel:inspect`,
 /// and this endpoint declares it: a session without the grant is told so by the manifold
 /// rather than discovering it as a `Denied` mid-resolution. The Catalog page's XSLT cards
 /// reference it as their `src` — both src and stylesheet are named, cacheable resources.

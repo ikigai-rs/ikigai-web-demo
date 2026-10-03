@@ -478,8 +478,8 @@ fn clock_now_serves_both_faces_until_the_minute() {
 
 /// `urn:data:catalog.rdf` declares `urn:cap:kernel:inspect` — the scope the catalog it
 /// reads enforces — so it is `Denied` under no grants BEFORE anything runs, serves the
-/// declared RDF/XML under root, and is exactly as cacheable as the catalog: `Never`, no
-/// thread, a hit the second time.
+/// declared RDF/XML under root, and is exactly as cacheable as the catalog: `Never`, the
+/// catalog's threads and no foreign one, a hit the second time.
 #[test]
 fn catalog_rdf_declares_the_scope_it_reaches() {
     let jail = jail();
@@ -508,10 +508,28 @@ fn catalog_rdf_declares_the_scope_it_reaches() {
     );
     assert!(text(&first).contains("ik:Endpoint"), "{}", text(&first));
     assert_eq!(first.expiry, Expiry::Never);
+    // "Exactly as cacheable as the catalog", spelled so it holds across core's caret. Up to
+    // 0.1.72 a cacheable answer carried no thread, so all three sets below were empty. Since
+    // 0.1.73 every cacheable answer hangs on its own canonical name (ledger #549, #512 hole
+    // A), so this resource carries its own thread and the transrept step's; and the catalog
+    // itself hangs on `urn:kernel:bindings` (ledger #510), which this resource must INHERIT —
+    // a binding change has to reach the cards. Anything else is a foreign thread: refused.
+    let catalog = resolve(kernel, request(Verb::Source, "urn:kernel:catalog", &[]));
+    let threads = first.threads();
     assert!(
-        first.threads().is_empty(),
-        "as threadless as the catalog: {:?}",
-        first.threads()
+        catalog.threads().is_subset(threads),
+        "inherits every catalog thread {:?}, got {threads:?}",
+        catalog.threads()
+    );
+    let own_steps = ["urn:data:catalog.rdf", "urn:rdf:transrept"];
+    let foreign: Vec<_> = threads
+        .iter()
+        .filter(|t| !catalog.threads().contains(*t))
+        .filter(|t| !own_steps.contains(&t.as_str()))
+        .collect();
+    assert!(
+        foreign.is_empty(),
+        "carries only the catalog's threads and its own steps' names, foreign: {foreign:?}"
     );
     assert!(kernel.is_cached(&probe, &Capability::root()));
 }
