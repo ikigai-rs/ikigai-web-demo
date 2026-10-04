@@ -148,8 +148,8 @@ ikigai-xslt = "0.1.0"
 # server). On wasm the host lazy-loads the module instead (json-ld kept out of the host).
 ikigai-jsonld = "0.1.1"  # compact sources a context-by-reference
 # SHACL validation linked natively (rudof). On wasm the browser serves urn:shacl:validate via
-# the JS shacl-engine (dist/shacl-loader.js) by default, or — behind `?shacl=rudof` — this
-# same crate's `module` feature as a lazily-loaded wasm module, built in pages.yml.
+# this same crate's `module` feature as a lazily-loaded wasm module (built in pages.yml) by
+# default, or — behind `?shacl=js` — the JS shacl-engine (dist/shacl-loader.js).
 ikigai-shacl = "0.1.1"  # ★ 0.1.0 IS NOT BUILDABLE, so it was never a true floor. Its
                         # `shacl = "0.3"` caret admits rudof 0.3.17+, and 0.3.17 added a third
                         # argument (`&ShaclConfig`) to `validate()` — a SOURCE break shipped in
@@ -184,7 +184,7 @@ ikigai-time = "0.2.0"  # the wasm fix: a completed job is stamped from the kerne
                        # older need: persistent jobs + cancel target=<iri> for the greeter Stop.)
 web-sys = { version = "0.3", features = [
     "Window", "EventTarget", "StorageEvent",
-    "Location",  # `?shacl=rudof`: which engine serves urn:shacl:validate in this page
+    "Location",  # `?shacl=js`: which engine serves urn:shacl:validate in this page
     "Request", "RequestInit", "Response", "Headers",
 ] }
 

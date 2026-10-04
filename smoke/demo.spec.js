@@ -459,20 +459,20 @@ test('the old urn:fn: names still resolve, through the host alias table', async 
   expect(unexpected, `unexpected page errors:\n${unexpected.join('\n')}`).toEqual([]);
 });
 
-// The REAL ikigai-shacl crate (rudof), compiled to wasm and loaded as a lazy module, held
-// to the same verdicts as shacl-engine — the engine the page serves `urn:shacl:validate`
-// with by default.
+// The REAL ikigai-shacl crate (rudof), compiled to wasm and loaded as a lazy module — the
+// engine the page serves `urn:shacl:validate` with by default (ledger #745) — held to the
+// same verdicts as shacl-engine, which `?shacl=js` selects for comparison.
 //
 // Until this test, no SHACL validation had ever run inside wasm: rudof gated its validator
 // out of wasm32 below 0.3.22, so ikigai-shacl's `module` feature did not even compile there
 // (ledger #206), and once it did, CI only type-checked it. Whether rayon, getrandom and the
 // `sparql` feature's reqwest/tokio survive a browser at RUNTIME is exactly what a compiler
 // cannot say. So this loads the page twice — once per engine, since the engine is chosen
-// when the kernel is built (`?shacl=rudof`) — runs the runbook's own SHACL fixtures through
+// when the kernel is built (`?shacl=js`) — runs the runbook's own SHACL fixtures through
 // each, and asserts:
 //
-//   - the rudof page actually FETCHED the module wasm, and the default page did not (so a
-//     silently-unwired toggle cannot pass by quietly running shacl-engine twice);
+//   - the default page actually FETCHED the module wasm, and the `?shacl=js` page did not
+//     (so a silently-unwired toggle cannot pass by quietly running one engine twice);
 //   - the conforming Account conforms, the violating one does not, under both engines;
 //   - both engines report the SAME violations, compared on (focus node, path, component) —
 //     the ValidationOutcome contract ikigai-shacl's js-parity suite pins. rudof also emits
@@ -516,14 +516,14 @@ async function shaclOutcomes(page, url) {
 
 test('the real ikigai-shacl module validates in wasm, and agrees with shacl-engine', async ({ browser }) => {
   const rudofPage = await browser.newPage();
-  const rudof = await shaclOutcomes(rudofPage, '/index.html?shacl=rudof');
+  const rudof = await shaclOutcomes(rudofPage, '/index.html');
   await rudofPage.close();
   const enginePage = await browser.newPage();
-  const engine = await shaclOutcomes(enginePage, '/index.html');
+  const engine = await shaclOutcomes(enginePage, '/index.html?shacl=js');
   await enginePage.close();
 
-  expect(rudof.wasmFetched.length, 'the rudof page must load the module wasm').toBeGreaterThan(0);
-  expect(engine.wasmFetched, 'the default page must not load the module wasm').toEqual([]);
+  expect(rudof.wasmFetched.length, 'the default page must load the rudof module wasm').toBeGreaterThan(0);
+  expect(engine.wasmFetched, 'the ?shacl=js page must not load the module wasm').toEqual([]);
   // Only rudof carries `message`: proof the answers really came from different engines.
   expect(rudof.outcomes.bad.raw.violations[0]).toHaveProperty('message');
   expect(engine.outcomes.bad.raw.violations[0]).not.toHaveProperty('message');

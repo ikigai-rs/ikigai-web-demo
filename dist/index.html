@@ -145,10 +145,12 @@ import init, { evalLineAsync, hostCall } from './ikigai_web_demo.js?v=__BUILD__'
 // which answers with a `HostResult` — a bidirectional byte channel between the instances.
 import { xsltInvokeSession } from './xslt-loader.js';
 import { jsonldInvokeSession } from './jsonld-loader.js';
-// SHACL: self-registers window.shaclValidate; shacl-engine itself loads lazily on first use.
+// SHACL under `?shacl=js`: self-registers window.shaclValidate; shacl-engine itself loads
+// lazily on first use, and never in a page using the default engine below.
 import './shacl-loader.js';
-// The real ikigai-shacl (rudof) module — used only when the page URL carries `?shacl=rudof`,
-// which the kernel reads when it is built. Importing the loader fetches nothing.
+// The real ikigai-shacl (rudof) module — the default engine, unless the page URL carries
+// `?shacl=js`, which the kernel reads when it is built. Importing the loader fetches nothing;
+// the module wasm loads on the first validation.
 import { shaclInvokeSession } from './shacl-module-loader.js';
 window.hostCall = (replyBytes) => hostCall(replyBytes);
 window.xsltInvokeSession = (invokeBytes) => xsltInvokeSession(invokeBytes);

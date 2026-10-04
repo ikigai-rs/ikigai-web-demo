@@ -43,7 +43,9 @@ concurrency:
 #
 # SHACL_REV is ikigai-shacl main at the rudof raise (shacl PR #11): the first revision whose
 # `module` feature builds for wasm32 at all (rudof >= 0.3.22, ledger #206). It is not a
-# release yet — move it to the 0.2.0 release commit once that is published.
+# release yet — move it to the 0.2.0 release commit once that is published. (Checked
+# 2026-10-04: the 0.2.0 bump is merged on ikigai-shacl main, 75ae4ac, but crates.io's
+# newest is still 0.1.4, so this stays.)
 #
 # To bump: replace the SHA, push, and let `smoke` vet the result. That is what it is for.
 env:
@@ -115,9 +117,9 @@ jobs:
             jsonld-src/target/wasm32-unknown-unknown/release/ikigai_jsonld.wasm
 
       # The REAL ikigai-shacl crate (rudof) as a lazy module, loaded via the committed
-      # dist/shacl-module-loader.js. The page serves `urn:shacl:validate` through it only
-      # when opened with `?shacl=rudof`; the default stays shacl-engine (JS). Same recipe as
-      # the two modules above.
+      # dist/shacl-module-loader.js. The page serves `urn:shacl:validate` through it by
+      # default; `?shacl=js` selects shacl-engine (JS) instead, for comparison. Same recipe
+      # as the two modules above.
       - name: Build SHACL module WASM + JS bindings into dist/
         run: |
           git init -q shacl-src
