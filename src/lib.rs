@@ -648,7 +648,7 @@ impl Endpoint for CatalogRdf {
 mod xslt_module {
     use super::*;
     use ikigai_core::ArgSpec;
-    use ikigai_module::{ModuleSessionTransport, WasmModuleSpace};
+    use ikigai_module::{ModuleFloor, ModuleSessionTransport, WasmModuleSpace};
 
     // The lazy module's session entry, a global the loader wires to `invoke_session` on the
     // module wasm (index.html → dist/xslt-loader.js). The heavy module wasm loads inside it
@@ -728,8 +728,16 @@ mod xslt_module {
     /// `with_endpoint` declares the one concrete IRI so it lists in the catalog (the same
     /// card the native `ikigai_xslt::space()` enumerates) without loading the module.
     pub fn space() -> WasmModuleSpace {
-        WasmModuleSpace::new(["urn:xslt:"], Arc::new(BrowserXsltTransport), describe())
-            .with_endpoint("urn:xslt:transform", describe())
+        // Public, and said so: `urn:xslt:transform` requires no capability of its own (it
+        // reaches `src`/`stylesheet` back through this kernel under the caller's capability),
+        // exactly as the native `ikigai_xslt::space()` declares nothing.
+        WasmModuleSpace::new(
+            ["urn:xslt:"],
+            Arc::new(BrowserXsltTransport),
+            describe(),
+            ModuleFloor::public(),
+        )
+        .with_endpoint("urn:xslt:transform", describe())
     }
 }
 
@@ -751,7 +759,7 @@ fn xslt_space() -> Arc<dyn Space> {
 mod jsonld_module {
     use super::*;
     use ikigai_core::ArgSpec;
-    use ikigai_module::{ModuleSessionTransport, WasmModuleSpace};
+    use ikigai_module::{ModuleFloor, ModuleSessionTransport, WasmModuleSpace};
 
     #[wasm_bindgen]
     extern "C" {
@@ -859,10 +867,13 @@ mod jsonld_module {
     }
 
     pub fn space() -> WasmModuleSpace {
+        // Public, like the native `ikigai_jsonld::space()`, which declares no capability: a
+        // context-by-reference is fetched back through this kernel under the caller's.
         WasmModuleSpace::new(
             ["urn:jsonld:"],
             Arc::new(BrowserJsonldTransport),
             describe(),
+            ModuleFloor::public(),
         )
         .with_endpoint("urn:jsonld:expand", expand_card())
         .with_endpoint("urn:jsonld:flatten", flatten_card())
@@ -881,14 +892,53 @@ fn jsonld_space() -> Arc<dyn Space> {
     Arc::new(ikigai_jsonld::space())
 }
 
-/// Browser SHACL validation behind `urn:shacl:validate`. rudof's validator is native-only
-/// (wasm-gated), so in the browser the SAME resource is served by the pure-JS shacl-engine
-/// (`dist/shacl-loader.js`). The output is held to the same `ValidationOutcome` contract as
-/// the native ikigai-shacl crate — proven equal in its `js-parity` suite.
+/// The `urn:shacl:validate` card, shared by both browser engines so the catalog, the engine's
+/// argument routing and the manifold see one contract whichever engine is bound. `engine`
+/// names which one serves this page, so a reader of `meta urn:shacl:validate` can tell.
 #[cfg(target_family = "wasm")]
-mod shacl_module {
+fn shacl_card(engine: &str) -> Description {
+    Description::new("shacl-validate")
+        .title("SHACL validate")
+        .summary(format!(
+            "Validate an RDF data graph against a SHACL shapes graph. The report is itself a \
+             graph (text/turtle) — or application/json {{conforms, violations}}. Served in \
+             this page by {engine}."
+        ))
+        .verb(Verb::Source)
+        .verb(Verb::Meta)
+        .input(
+            ArgSpec::new("data")
+                .summary("the RDF data graph to validate — usually piped in")
+                .class(xsd("string")),
+        )
+        .input(
+            ArgSpec::new("shapes")
+                .summary("the SHACL shapes graph: inline Turtle or a resolvable resource IRI")
+                .class(xsd("string")),
+        )
+        .input(
+            ArgSpec::new("as")
+                .summary(
+                    "report representation: text/turtle (default, the report graph) or \
+                     application/json",
+                )
+                .class(xsd("string"))
+                .one_of(["text/turtle", "application/json"])
+                .default_value("text/turtle")
+                .optional(),
+        )
+        .output("text/turtle;charset=utf-8")
+        .output("application/json;charset=utf-8")
+}
+
+/// Browser SHACL validation behind `urn:shacl:validate` through the pure-JS shacl-engine
+/// (`dist/shacl-loader.js`) — the page's DEFAULT engine. The output is held to the same
+/// `ValidationOutcome` contract as the native ikigai-shacl crate, proven equal in its
+/// `js-parity` suite. The real rudof module ([`shacl_rudof`]) is the other engine.
+#[cfg(target_family = "wasm")]
+mod shacl_js {
     use super::*;
-    use ikigai_core::{ArgSpec, EndpointSpace};
+    use ikigai_core::EndpointSpace;
 
     #[wasm_bindgen]
     extern "C" {
@@ -980,39 +1030,7 @@ mod shacl_module {
         }
 
         fn describe(&self) -> Description {
-            Description::new("shacl-validate")
-                .title("SHACL validate")
-                .summary(
-                    "Validate an RDF data graph against a SHACL shapes graph. The report is \
-                     itself a graph (text/turtle) — or application/json {conforms, results}.",
-                )
-                .verb(Verb::Source)
-                .verb(Verb::Meta)
-                .input(
-                    ArgSpec::new("data")
-                        .summary("the RDF data graph to validate — usually piped in")
-                        .class(xsd("string")),
-                )
-                .input(
-                    ArgSpec::new("shapes")
-                        .summary(
-                            "the SHACL shapes graph: inline Turtle or a resolvable resource IRI",
-                        )
-                        .class(xsd("string")),
-                )
-                .input(
-                    ArgSpec::new("as")
-                        .summary(
-                            "report representation: text/turtle (default, the report graph) \
-                             or application/json",
-                        )
-                        .class(xsd("string"))
-                        .one_of(["text/turtle", "application/json"])
-                        .default_value("text/turtle")
-                        .optional(),
-                )
-                .output("text/turtle;charset=utf-8")
-                .output("application/json;charset=utf-8")
+            shacl_card("shacl-engine (JavaScript), the default")
         }
     }
 
@@ -1021,10 +1039,88 @@ mod shacl_module {
     }
 }
 
-/// The `urn:shacl:validate` space: shacl-engine (JS) in the browser, rudof linked natively.
+/// The REAL `ikigai-shacl` crate — rudof — as a dynamically-loaded wasm module, mounted like
+/// [`xslt_module`] and [`jsonld_module`] over its own `shaclInvokeSession` channel
+/// (`dist/shacl-module-loader.js`). The module wasm (~7.8 MB raw) is fetched only on the first
+/// validation, and only in a page that chose this engine (see [`shacl_engine`]); by-reference
+/// `shapes` come back to this kernel as `HostCall`s, so the report inherits their threads.
+#[cfg(target_family = "wasm")]
+mod shacl_rudof {
+    use super::*;
+    use ikigai_module::{ModuleFloor, ModuleSessionTransport, WasmModuleSpace};
+
+    #[wasm_bindgen]
+    extern "C" {
+        #[wasm_bindgen(catch, js_name = "shaclInvokeSession")]
+        async fn shacl_invoke_session(invoke: Vec<u8>) -> std::result::Result<JsValue, JsValue>;
+    }
+
+    /// Same shape as the xslt/jsonld transports: confine the `!Send` JS call to a
+    /// `spawn_local` task and bridge the (`Send`) bytes back through a oneshot.
+    struct BrowserShaclTransport;
+
+    #[async_trait]
+    impl ModuleSessionTransport for BrowserShaclTransport {
+        async fn invoke_session(&self, invoke: Vec<u8>) -> std::result::Result<Vec<u8>, String> {
+            let (tx, rx) = futures::channel::oneshot::channel();
+            wasm_bindgen_futures::spawn_local(async move {
+                let result = match shacl_invoke_session(invoke).await {
+                    Ok(value) => Ok(js_sys::Uint8Array::new(&value).to_vec()),
+                    Err(e) => Err(e
+                        .as_string()
+                        .unwrap_or_else(|| "shacl module session failed".to_string())),
+                };
+                let _ = tx.send(result);
+            });
+            rx.await
+                .map_err(|_| "shacl module task was dropped".to_string())?
+        }
+    }
+
+    pub fn space() -> WasmModuleSpace {
+        let card = || shacl_card("ikigai-shacl (rudof), a lazily-loaded wasm module");
+        // Public, like the native `ikigai_shacl::space()`, which declares no capability:
+        // by-reference `shapes` are sourced back through this kernel under the caller's.
+        WasmModuleSpace::new(
+            ["urn:shacl:"],
+            Arc::new(BrowserShaclTransport),
+            card(),
+            ModuleFloor::public(),
+        )
+        .with_endpoint("urn:shacl:validate", card())
+    }
+}
+
+/// Which engine serves `urn:shacl:validate` in this page: `?shacl=rudof` in the page URL
+/// mounts the real `ikigai-shacl` module ([`shacl_rudof`]); anything else keeps shacl-engine
+/// ([`shacl_js`]), the default. Read once, when the kernel is built, so a page never mixes
+/// engines under one name — the cache would otherwise serve one engine's report as the
+/// other's. Which engine is the DEFAULT is a deliberate decision, not this function's.
+#[cfg(target_family = "wasm")]
+fn shacl_engine() -> &'static str {
+    let rudof = web_sys::window()
+        .and_then(|w| w.location().search().ok())
+        .is_some_and(|q| {
+            q.trim_start_matches('?')
+                .split('&')
+                .any(|pair| pair == "shacl=rudof")
+        });
+    if rudof {
+        "rudof"
+    } else {
+        "shacl-engine"
+    }
+}
+
+/// The `urn:shacl:validate` space: in the browser, shacl-engine (JS) by default or the real
+/// rudof module behind `?shacl=rudof` (see [`shacl_engine`]); rudof linked natively.
 #[cfg(target_family = "wasm")]
 fn shacl_space() -> Arc<dyn Space> {
-    Arc::new(shacl_module::space())
+    if shacl_engine() == "rudof" {
+        Arc::new(shacl_rudof::space())
+    } else {
+        Arc::new(shacl_js::space())
+    }
 }
 #[cfg(not(target_family = "wasm"))]
 fn shacl_space() -> Arc<dyn Space> {
@@ -1180,8 +1276,9 @@ pub fn build_kernel_in(nature: &'static str, file_root: impl Into<std::path::Pat
         // JSON-LD operators (urn:jsonld:expand / :compact / :flatten) — lazy wasm module,
         // like XSLT; the heavy json-ld tree stays out of the host wasm.
         jsonld_space(),
-        // SHACL validation (urn:shacl:validate) — the JS shacl-engine here (rudof's validator
-        // is native-only); same resource, same ValidationOutcome contract as the CLI.
+        // SHACL validation (urn:shacl:validate) — the JS shacl-engine here by default, or the
+        // real rudof module behind `?shacl=rudof`; same resource, same ValidationOutcome
+        // contract as the CLI, where rudof is linked.
         shacl_space(),
         // The interactive runbook (`urn:runbook:*`) — the same module the native CLI
         // links, rendered here as htmx (HATEOAS) HTML.
@@ -1723,12 +1820,9 @@ pub fn host_call(reply: Vec<u8>) -> js_sys::Promise {
                 .issue_as_async(request, &capability)
                 .await
                 .map(|(representation, _status)| representation)
-                // The module session protocol still carries failures as a flat String
-                // (`ModuleReply::Error`), so the kernel's structured `Error` flattens
-                // here. The taxonomy is lost at the module boundary — the module only
-                // ever renders this text — until the session protocol grows a typed
-                // failure the way the wire's `ErrorTyped` did.
-                .map_err(|e| e.to_string())
+            // The kernel's structured `Error` crosses as-is: since ikigai-module 0.3.0 the
+            // session answers a host call with a typed `HostError`, so the module sees
+            // Denied / NotFound rather than a flattened string.
         })
         .await;
         Ok(js_sys::Uint8Array::from(&bytes[..]).into())

@@ -458,3 +458,89 @@ test('the old urn:fn: names still resolve, through the host alias table', async 
 
   expect(unexpected, `unexpected page errors:\n${unexpected.join('\n')}`).toEqual([]);
 });
+
+// The REAL ikigai-shacl crate (rudof), compiled to wasm and loaded as a lazy module, held
+// to the same verdicts as shacl-engine — the engine the page serves `urn:shacl:validate`
+// with by default.
+//
+// Until this test, no SHACL validation had ever run inside wasm: rudof gated its validator
+// out of wasm32 below 0.3.22, so ikigai-shacl's `module` feature did not even compile there
+// (ledger #206), and once it did, CI only type-checked it. Whether rayon, getrandom and the
+// `sparql` feature's reqwest/tokio survive a browser at RUNTIME is exactly what a compiler
+// cannot say. So this loads the page twice — once per engine, since the engine is chosen
+// when the kernel is built (`?shacl=rudof`) — runs the runbook's own SHACL fixtures through
+// each, and asserts:
+//
+//   - the rudof page actually FETCHED the module wasm, and the default page did not (so a
+//     silently-unwired toggle cannot pass by quietly running shacl-engine twice);
+//   - the conforming Account conforms, the violating one does not, under both engines;
+//   - both engines report the SAME violations, compared on (focus node, path, component) —
+//     the ValidationOutcome contract ikigai-shacl's js-parity suite pins. rudof also emits
+//     `message` and `value`, which shacl-engine's outcome does not carry, so those are not
+//     compared;
+//   - the kernel's own catalog validates against the ik:Endpoint shape under both.
+const SHACL_CASES = {
+  ok: 'source urn:data:account-ok | urn:shacl:validate shapes=urn:data:account-shape as=application/json',
+  bad: 'source urn:data:account-bad | urn:shacl:validate shapes=urn:data:account-shape as=application/json',
+  catalog: 'source urn:kernel:catalog | urn:shacl:validate shapes=urn:data:endpoint-shape as=application/json',
+};
+
+/** The JSON outcome out of a terminal answer (the line after it is the cache tag). */
+function outcomeOf(text) {
+  const json = text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1);
+  const outcome = JSON.parse(json);
+  const violations = outcome.violations
+    .map((v) => [v.focus_node, v.path, v.component].join(' | '))
+    .sort();
+  return { conforms: outcome.conforms, violations, raw: outcome };
+}
+
+async function shaclOutcomes(page, url) {
+  /** @type {string[]} */ const wasmFetched = [];
+  /** @type {string[]} */ const unexpected = [];
+  page.on('request', (req) => {
+    if (/ikigai_shacl_bg\.wasm/.test(req.url())) wasmFetched.push(req.url());
+  });
+  page.on('pageerror', (err) => unexpected.push(`pageerror: ${err.message}`));
+  await page.goto(url);
+  await expect(page.locator('nav.ik-toolbar')).toBeVisible();
+  const outcomes = {};
+  for (const [name, line] of Object.entries(SHACL_CASES)) {
+    const text = await runLine(page, line);
+    expect(text, `${url}: ${name} answered no outcome`).toContain('"conforms"');
+    outcomes[name] = outcomeOf(text);
+  }
+  expect(unexpected, `unexpected page errors:\n${unexpected.join('\n')}`).toEqual([]);
+  return { outcomes, wasmFetched };
+}
+
+test('the real ikigai-shacl module validates in wasm, and agrees with shacl-engine', async ({ browser }) => {
+  const rudofPage = await browser.newPage();
+  const rudof = await shaclOutcomes(rudofPage, '/index.html?shacl=rudof');
+  await rudofPage.close();
+  const enginePage = await browser.newPage();
+  const engine = await shaclOutcomes(enginePage, '/index.html');
+  await enginePage.close();
+
+  expect(rudof.wasmFetched.length, 'the rudof page must load the module wasm').toBeGreaterThan(0);
+  expect(engine.wasmFetched, 'the default page must not load the module wasm').toEqual([]);
+  // Only rudof carries `message`: proof the answers really came from different engines.
+  expect(rudof.outcomes.bad.raw.violations[0]).toHaveProperty('message');
+  expect(engine.outcomes.bad.raw.violations[0]).not.toHaveProperty('message');
+
+  for (const run of [rudof, engine]) {
+    expect(run.outcomes.ok.conforms).toBe(true);
+    expect(run.outcomes.ok.violations).toEqual([]);
+    expect(run.outcomes.bad.conforms).toBe(false);
+    expect(run.outcomes.catalog.conforms).toBe(true);
+  }
+  // The runbook's note: owner is a literal (not an IRI), balance is not a decimal.
+  expect(rudof.outcomes.bad.violations).toEqual([
+    'http://example.org/acct2 | http://example.org/balance | http://www.w3.org/ns/shacl#DatatypeConstraintComponent',
+    'http://example.org/acct2 | http://example.org/owner | http://www.w3.org/ns/shacl#NodeKindConstraintComponent',
+  ]);
+  for (const name of Object.keys(SHACL_CASES)) {
+    expect(rudof.outcomes[name].conforms, `${name}: verdicts differ`).toBe(engine.outcomes[name].conforms);
+    expect(rudof.outcomes[name].violations, `${name}: violations differ`).toEqual(engine.outcomes[name].violations);
+  }
+});
