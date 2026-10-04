@@ -8,7 +8,7 @@ name: Build, smoke and deploy the demo
 # gate that runs the wasm rather than compiling it, and a gate that first executes after
 # merge is a gate that reports a broken demo instead of preventing one — which is exactly
 # the twenty days of August this repo already spent. Running here on PRs costs a wasm
-# build plus the two module clones per PR and buys the check BEFORE the merge, not after.
+# build plus the module clones per PR and buys the check BEFORE the merge, not after.
 on:
   push:
     branches: [main]
@@ -34,14 +34,22 @@ concurrency:
 # tags or releases, so a commit SHA is the only immutable handle they offer; it is also the
 # stronger one, since a tag can be force-moved and a SHA cannot.
 #
-# Both pins are the HEADs that built every deploy through 2026-09-02, and both correspond to
-# the crates.io 0.1.1 the NATIVE build already locks — so adopting them changed nothing and
-# aligned the wasm modules with their native counterparts.
+# Each pin is the release commit of the version the NATIVE build locks (Cargo.lock), so the
+# wasm modules and their native counterparts are the same code. They build without a lock
+# (none of the three repos commits one), so each module resolves FRESH here — the reason the
+# previous pins (xslt 0.1.1 / jsonld 0.1.1, on the ikigai-module 0.1.x line) stopped
+# building once ikigai-core 0.1.78 made `Resolved` constructible only through
+# `Resolved::new`: Pages was red from ~2026-09-27 until these moved (ledger #728).
+#
+# SHACL_REV is ikigai-shacl main at the rudof raise (shacl PR #11): the first revision whose
+# `module` feature builds for wasm32 at all (rudof >= 0.3.22, ledger #206). It is not a
+# release yet — move it to the 0.2.0 release commit once that is published.
 #
 # To bump: replace the SHA, push, and let `smoke` vet the result. That is what it is for.
 env:
-  XSLT_REV: 2858fe300df42e06ac0b2b6ca00343e192aaa1f0    # ikigai-xslt 0.1.1
-  JSONLD_REV: 77319cd87d39ac8821b8ec6bab5bd7196c5b88de  # ikigai-jsonld 0.1.1
+  XSLT_REV: f37789cbdbb1ee2fcdd6d9a5fee243f401f889e2    # ikigai-xslt 0.1.4 (xslt PR #14)
+  JSONLD_REV: 93b328c66240dd533cb5c5dfb9952b1e922d2ba4  # ikigai-jsonld 0.1.3 (jsonld PR #7)
+  SHACL_REV: d8340c085746f55145d8e7ce20363bc20f563f3e   # ikigai-shacl main, rudof raise (shacl PR #11)
 
 jobs:
   build:
@@ -105,6 +113,22 @@ jobs:
             --manifest-path jsonld-src/Cargo.toml --target wasm32-unknown-unknown
           wasm-bindgen --target web --out-dir dist \
             jsonld-src/target/wasm32-unknown-unknown/release/ikigai_jsonld.wasm
+
+      # The REAL ikigai-shacl crate (rudof) as a lazy module, loaded via the committed
+      # dist/shacl-module-loader.js. The page serves `urn:shacl:validate` through it only
+      # when opened with `?shacl=rudof`; the default stays shacl-engine (JS). Same recipe as
+      # the two modules above.
+      - name: Build SHACL module WASM + JS bindings into dist/
+        run: |
+          git init -q shacl-src
+          git -C shacl-src remote add origin https://github.com/ikigai-rs/ikigai-shacl.git
+          git -C shacl-src fetch -q --depth 1 origin "$SHACL_REV"
+          git -C shacl-src checkout -q FETCH_HEAD
+          test "$(git -C shacl-src rev-parse HEAD)" = "$SHACL_REV"
+          cargo build --release --lib --features module \
+            --manifest-path shacl-src/Cargo.toml --target wasm32-unknown-unknown
+          wasm-bindgen --target web --out-dir dist \
+            shacl-src/target/wasm32-unknown-unknown/release/ikigai_shacl.wasm
 
       # Cache-bust the fixed-name host JS + wasm: rewrite the ?v=__BUILD__ placeholder in
       # index.html to this commit's SHA, so every deploy fetches fresh assets instead of a

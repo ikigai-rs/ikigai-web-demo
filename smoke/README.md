@@ -82,6 +82,17 @@ terminal and reads the Control panel:
 ⚠ That last one couples the page to the rule: `compose` propagates a failed marker, so the
 exhibit and the alias rule are deleted in the same edit or the whole page dies.
 
+**The real SHACL module runs, and agrees** (`the real ikigai-shacl module validates in
+wasm…`): `ikigai-shacl`'s `module` feature first compiled for wasm32 at the rudof 0.3.22 raise
+(ledger #206), and CI there only type-checks it, so nothing had ever RUN a SHACL validation in
+wasm. The test loads the page twice, once per engine (`/index.html?shacl=rudof`, then the
+default shacl-engine page), runs the runbook's own fixtures (a conforming Account, a violating
+one, and the kernel's catalog against the `ik:Endpoint` shape) and asserts the rudof page
+fetched `ikigai_shacl_bg.wasm` while the default page did not, that the verdicts are right, and
+that both engines report the same violations on (focus node, path, component). Ablated by
+deleting the `window.shaclInvokeSession` line from `dist/index.html`: the rudof page's first
+validation never answers, and the test fails.
+
 ## It was verified against the actual bug
 
 Before this landed, the gate was replayed against a deliberately broken build — `Cargo.toml`
@@ -140,13 +151,13 @@ that compiles but does not run never reaches the public URL.
 That workflow runs on **pull requests too**, with `deploy` guarded by
 `if: github.event_name != 'pull_request'`. So a PR builds and smoke-tests without
 publishing, and the gate blocks the *merge*, not just the deploy. It costs a wasm build and
-the two module clones per PR; a gate that first executes after merge would report a broken
+the module clones per PR; a gate that first executes after merge would report a broken
 demo rather than prevent one, which is precisely the twenty days above.
 
 Running it there, rather than as an in-crate `wasm-bindgen-test`, buys coverage a Rust test
 cannot have: `dist/index.html` carries ~400 lines of hand-written glue (the `/k/` fetch
 interception, the htmx adapter, the passkey bridge) that no Rust test can reach, and
-`pages.yml` builds two module wasms from `ikigai-xslt` and `ikigai-jsonld`, which nothing
+`pages.yml` builds three module wasms from `ikigai-xslt`, `ikigai-jsonld` and `ikigai-shacl`, which nothing
 in this repo compiles or lints. Those were unpinned upstream `HEAD` until 2026-09-02 — any
 upstream commit reached the public site with no commit here — and are now pinned to exact
 SHAs in the workflow's `env:` block. Pinning makes a module change deliberate; this gate is

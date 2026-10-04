@@ -147,9 +147,13 @@ import { xsltInvokeSession } from './xslt-loader.js';
 import { jsonldInvokeSession } from './jsonld-loader.js';
 // SHACL: self-registers window.shaclValidate; shacl-engine itself loads lazily on first use.
 import './shacl-loader.js';
+// The real ikigai-shacl (rudof) module — used only when the page URL carries `?shacl=rudof`,
+// which the kernel reads when it is built. Importing the loader fetches nothing.
+import { shaclInvokeSession } from './shacl-module-loader.js';
 window.hostCall = (replyBytes) => hostCall(replyBytes);
 window.xsltInvokeSession = (invokeBytes) => xsltInvokeSession(invokeBytes);
 window.jsonldInvokeSession = (invokeBytes) => jsonldInvokeSession(invokeBytes);
+window.shaclInvokeSession = (invokeBytes) => shaclInvokeSession(invokeBytes);
 
 // The live terminal: a custom element that self-wires when the composed HTML
 // (which contains <ikigai-cli>) is inserted. It drives the same Engine as the page.

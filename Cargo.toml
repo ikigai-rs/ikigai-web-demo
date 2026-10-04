@@ -89,13 +89,18 @@ ikigai-wire = "0.1.10"  # wire v7: WireError + Reply::ErrorTyped (a failure cros
 # The dynamically-loadable module format. The host mounts the lazy XSLT module as a generic
 # WasmModuleSpace and services its HostCalls with serve_host_call; the session protocol + the
 # provenance sink live in the crate (the module runs run_session in its own wasm).
-ikigai-module = "0.1.10"  # the same source break as ikigai-resolve above: `Resolved` gained
-                          # a `canonical` field in ikigai-core 0.1.64 and this crate built it
-                          # literally. Twice now for the same reason — 0.1.7 lost the `origin`
-                          # field ikigai-core 0.1.46 added, in exactly this way — so the
-                          # PATTERN is the finding, not either incident. (0.1.8 gave the older
-                          # need: SpaceEntry::new, and with_endpoint() so lazy modules
-                          # enumerate into the catalog.)
+ikigai-module = "0.3.1"  # ★ the floor that COMPILES against ikigai-core 0.1.78+, where
+                         # `Resolved` gained a private field and can only be built through
+                         # `Resolved::new`. 0.1.10, 0.2.0 and 0.3.0 all build it by struct
+                         # literal, so any of them pins this whole host below core 0.1.78 (the
+                         # third time for the same reason: 0.1.7 lost `origin` at core 0.1.46,
+                         # 0.1.9 lost `canonical` at 0.1.64 — the PATTERN is the finding).
+                         # Also source-breaking here, twice: `WasmModuleSpace::new` takes a
+                         # `ModuleFloor` (0.2.0, the mount's authority declaration), and
+                         # `serve_host_call` takes a TYPED `Result<Representation>` (0.3.0), so
+                         # a denied or absent host resource crosses into the module as
+                         # Denied/NotFound instead of a flattened string.
+                         # ⚠ `^0.3.1` is also a CEILING (<0.4.0).
 # Outbound HTTP-client module (urn:httpGet…). Already async + executor-agnostic
 # (HttpTransport seam), so the browser supplies a `fetch`-backed transport — same
 # module the native CLI drives with ureq. Unchanged for M2, so straight from crates.io.
@@ -142,8 +147,9 @@ ikigai-xslt = "0.1.0"
 # JSON-LD operators linked natively (same reason as XSLT — no wasm lazy-load on the
 # server). On wasm the host lazy-loads the module instead (json-ld kept out of the host).
 ikigai-jsonld = "0.1.1"  # compact sources a context-by-reference
-# SHACL validation linked natively (rudof; native-only). On wasm the browser serves
-# urn:shacl:validate via the JS shacl-engine (dist/shacl-loader.js) instead.
+# SHACL validation linked natively (rudof). On wasm the browser serves urn:shacl:validate via
+# the JS shacl-engine (dist/shacl-loader.js) by default, or — behind `?shacl=rudof` — this
+# same crate's `module` feature as a lazily-loaded wasm module, built in pages.yml.
 ikigai-shacl = "0.1.1"  # ★ 0.1.0 IS NOT BUILDABLE, so it was never a true floor. Its
                         # `shacl = "0.3"` caret admits rudof 0.3.17+, and 0.3.17 added a third
                         # argument (`&ShaclConfig`) to `validate()` — a SOURCE break shipped in
@@ -178,6 +184,7 @@ ikigai-time = "0.2.0"  # the wasm fix: a completed job is stamped from the kerne
                        # older need: persistent jobs + cancel target=<iri> for the greeter Stop.)
 web-sys = { version = "0.3", features = [
     "Window", "EventTarget", "StorageEvent",
+    "Location",  # `?shacl=rudof`: which engine serves urn:shacl:validate in this page
     "Request", "RequestInit", "Response", "Headers",
 ] }
 

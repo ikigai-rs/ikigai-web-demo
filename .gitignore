@@ -9,6 +9,7 @@
 !/dist/xslt-loader.js
 !/dist/jsonld-loader.js
 !/dist/shacl-loader.js
+!/dist/shacl-module-loader.js
 /dist/*.wasm
 /dist/*.d.ts
 # Cargo.lock IS committed. This repo is an end product, not a library — it builds a
