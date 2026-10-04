@@ -1,6 +1,6 @@
-// Browser SHACL validator behind `urn:shacl:validate`. rudof's validator is native-only
-// (wasm-gated), so in the browser the SAME resource is served by the pure-JS shacl-engine.
-// The output is held to the SAME contract as the native (rudof) crate — a ValidationOutcome
+// Browser SHACL validator behind `urn:shacl:validate` in a page opened with `?shacl=js`: the
+// pure-JS shacl-engine, kept beside the default engine (the real ikigai-shacl crate, rudof,
+// as a wasm module: shacl-module-loader.js) for comparison. The output is held to the SAME contract as the native (rudof) crate — a ValidationOutcome
 // {conforms, violations:[{focus_node, path, component}]} — proven equal in ikigai-shacl's
 // js-parity suite. shacl-engine + rdf-ext + n3 are loaded lazily from a CDN (esm.sh) on the
 // first validation, so page load doesn't depend on the CDN and the heavy libs aren't fetched

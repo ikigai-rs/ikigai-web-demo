@@ -85,12 +85,13 @@ exhibit and the alias rule are deleted in the same edit or the whole page dies.
 **The real SHACL module runs, and agrees** (`the real ikigai-shacl module validates in
 wasm…`): `ikigai-shacl`'s `module` feature first compiled for wasm32 at the rudof 0.3.22 raise
 (ledger #206), and CI there only type-checks it, so nothing had ever RUN a SHACL validation in
-wasm. The test loads the page twice, once per engine (`/index.html?shacl=rudof`, then the
-default shacl-engine page), runs the runbook's own fixtures (a conforming Account, a violating
-one, and the kernel's catalog against the `ik:Endpoint` shape) and asserts the rudof page
-fetched `ikigai_shacl_bg.wasm` while the default page did not, that the verdicts are right, and
-that both engines report the same violations on (focus node, path, component). Ablated by
-deleting the `window.shaclInvokeSession` line from `dist/index.html`: the rudof page's first
+wasm. rudof is the page's default engine (since ledger #745); `?shacl=js` selects
+shacl-engine. The test loads the page twice, once per engine (the default `/index.html`, then
+`/index.html?shacl=js`), runs the runbook's own fixtures (a conforming Account, a violating
+one, and the kernel's catalog against the `ik:Endpoint` shape) and asserts the default page
+fetched `ikigai_shacl_bg.wasm` while the `?shacl=js` page did not, that the verdicts are right,
+and that both engines report the same violations on (focus node, path, component). Ablated by
+deleting the `window.shaclInvokeSession` line from `dist/index.html`: the default page's first
 validation never answers, and the test fails.
 
 ## It was verified against the actual bug

@@ -1,6 +1,6 @@
 // Lazy loader for the REAL ikigai-shacl crate (rudof) as a dynamically-loadable wasm module.
-// It serves `urn:shacl:validate` only in a page opened with `?shacl=rudof`; by default the
-// page uses shacl-engine (shacl-loader.js) and this file never fetches anything. Like
+// It serves `urn:shacl:validate` by default; a page opened with `?shacl=js` uses shacl-engine
+// (shacl-loader.js) instead, and then this file never fetches anything. Like
 // xslt-loader.js and jsonld-loader.js, it is the "transport" between two wasm instances: a JS
 // byte channel carrying the module-session protocol. The module's `hostCall` import resolves
 // from the global scope (the host sets `globalThis.hostCall`), so a by-reference `shapes`

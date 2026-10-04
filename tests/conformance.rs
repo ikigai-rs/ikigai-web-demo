@@ -2,7 +2,7 @@
 //! kernel binds and reports every violation at once — run NATIVELY over the same
 //! [`build_kernel_in`] the browser composes. The wasm face is a build target the shared
 //! CI checks (`wasm-lib`); the suite does not run under wasm, so the three browser-only
-//! cards this crate authors (`xslt-transform`, `jsonld-*`, `shacl-validate` over the JS
+//! cards this crate authors (`xslt-transform`, `jsonld-*`, `shacl-validate` for both browser
 //! engines) are typed by hand in `src/lib.rs` and never walked here — on native the same
 //! IRIs are served by the linked crates, whose cards are theirs.
 //!

@@ -52,11 +52,13 @@ client-side in WASM: `cap read-only` narrows the session to a *read* scope, afte
 resolve — and the file module's **jail** refuses to escape its root (`../../…`) even at
 full authority. The *same* `cap` command and enforcement as the native CLI.
 
-**Two SHACL engines, one resource.** `urn:shacl:validate` is served in the page by the
-JavaScript [shacl-engine](https://github.com/zazuko/shacl-engine) by default. Open the page
-with **`?shacl=rudof`** and the same name is served instead by the real
-[`ikigai-shacl`](https://crates.io/crates/ikigai-shacl) crate (rudof), compiled to wasm and
-loaded as a lazy module on the first validation, exactly like the XSLT and JSON-LD modules.
+**Two SHACL engines, one resource.** `urn:shacl:validate` is served in the page by the real
+[`ikigai-shacl`](https://crates.io/crates/ikigai-shacl) crate (rudof) by default, compiled to
+wasm and loaded as a lazy module on the first validation, exactly like the XSLT and JSON-LD
+modules (about 1.9 MB over the wire, once). Open the page with **`?shacl=js`** and the same
+name is served instead by the JavaScript
+[shacl-engine](https://github.com/zazuko/shacl-engine), kept for comparison. The two report
+the same verdicts and violations; rudof also gives each violation a `message` and `value`.
 The engine is chosen when the kernel is built, so a page never mixes two engines' reports
 under one cache entry; the Demo tab's SHACL steps run unchanged on either, and the smoke
 gate holds the two to the same verdicts.

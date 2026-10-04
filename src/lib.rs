@@ -932,9 +932,10 @@ fn shacl_card(engine: &str) -> Description {
 }
 
 /// Browser SHACL validation behind `urn:shacl:validate` through the pure-JS shacl-engine
-/// (`dist/shacl-loader.js`) — the page's DEFAULT engine. The output is held to the same
-/// `ValidationOutcome` contract as the native ikigai-shacl crate, proven equal in its
-/// `js-parity` suite. The real rudof module ([`shacl_rudof`]) is the other engine.
+/// (`dist/shacl-loader.js`) — the comparison engine, behind `?shacl=js` (see
+/// [`shacl_engine`]). The output is held to the same `ValidationOutcome` contract as the
+/// native ikigai-shacl crate, proven equal in its `js-parity` suite. The real rudof module
+/// ([`shacl_rudof`]) is the page's default.
 #[cfg(target_family = "wasm")]
 mod shacl_js {
     use super::*;
@@ -1030,7 +1031,7 @@ mod shacl_js {
         }
 
         fn describe(&self) -> Description {
-            shacl_card("shacl-engine (JavaScript), the default")
+            shacl_card("shacl-engine (JavaScript), selected by `?shacl=js`")
         }
     }
 
@@ -1041,9 +1042,10 @@ mod shacl_js {
 
 /// The REAL `ikigai-shacl` crate — rudof — as a dynamically-loaded wasm module, mounted like
 /// [`xslt_module`] and [`jsonld_module`] over its own `shaclInvokeSession` channel
-/// (`dist/shacl-module-loader.js`). The module wasm (~7.8 MB raw) is fetched only on the first
-/// validation, and only in a page that chose this engine (see [`shacl_engine`]); by-reference
-/// `shapes` come back to this kernel as `HostCall`s, so the report inherits their threads.
+/// (`dist/shacl-module-loader.js`) — the page's DEFAULT engine. The module wasm (~7.8 MB raw,
+/// ~1.9 MB over the wire) is fetched only on the first validation, and never in a page opened
+/// with `?shacl=js` (see [`shacl_engine`]); by-reference `shapes` come back to this kernel as
+/// `HostCall`s, so the report inherits their threads.
 #[cfg(target_family = "wasm")]
 mod shacl_rudof {
     use super::*;
@@ -1078,7 +1080,7 @@ mod shacl_rudof {
     }
 
     pub fn space() -> WasmModuleSpace {
-        let card = || shacl_card("ikigai-shacl (rudof), a lazily-loaded wasm module");
+        let card = || shacl_card("ikigai-shacl (rudof), a lazily-loaded wasm module, the default");
         // Public, like the native `ikigai_shacl::space()`, which declares no capability:
         // by-reference `shapes` are sourced back through this kernel under the caller's.
         WasmModuleSpace::new(
@@ -1091,29 +1093,31 @@ mod shacl_rudof {
     }
 }
 
-/// Which engine serves `urn:shacl:validate` in this page: `?shacl=rudof` in the page URL
-/// mounts the real `ikigai-shacl` module ([`shacl_rudof`]); anything else keeps shacl-engine
-/// ([`shacl_js`]), the default. Read once, when the kernel is built, so a page never mixes
-/// engines under one name — the cache would otherwise serve one engine's report as the
-/// other's. Which engine is the DEFAULT is a deliberate decision, not this function's.
+/// Which engine serves `urn:shacl:validate` in this page: the real `ikigai-shacl` module
+/// ([`shacl_rudof`]) by default; `?shacl=js` in the page URL mounts the pure-JS shacl-engine
+/// ([`shacl_js`]) instead, so the two stay side by side for comparison. Anything else,
+/// including the old `?shacl=rudof` links, gets rudof. Read once, when the kernel is built, so
+/// a page never mixes engines under one name — the cache would otherwise serve one engine's
+/// report as the other's. rudof became the default on Brian's call (2026-10-04, ledger #745),
+/// after web-demo PR #61 measured identical verdicts and violations on the runbook fixtures.
 #[cfg(target_family = "wasm")]
 fn shacl_engine() -> &'static str {
-    let rudof = web_sys::window()
+    let js = web_sys::window()
         .and_then(|w| w.location().search().ok())
         .is_some_and(|q| {
             q.trim_start_matches('?')
                 .split('&')
-                .any(|pair| pair == "shacl=rudof")
+                .any(|pair| pair == "shacl=js")
         });
-    if rudof {
-        "rudof"
-    } else {
+    if js {
         "shacl-engine"
+    } else {
+        "rudof"
     }
 }
 
-/// The `urn:shacl:validate` space: in the browser, shacl-engine (JS) by default or the real
-/// rudof module behind `?shacl=rudof` (see [`shacl_engine`]); rudof linked natively.
+/// The `urn:shacl:validate` space: in the browser, the real rudof module by default or the JS
+/// shacl-engine behind `?shacl=js` (see [`shacl_engine`]); rudof linked natively.
 #[cfg(target_family = "wasm")]
 fn shacl_space() -> Arc<dyn Space> {
     if shacl_engine() == "rudof" {
@@ -1276,8 +1280,8 @@ pub fn build_kernel_in(nature: &'static str, file_root: impl Into<std::path::Pat
         // JSON-LD operators (urn:jsonld:expand / :compact / :flatten) — lazy wasm module,
         // like XSLT; the heavy json-ld tree stays out of the host wasm.
         jsonld_space(),
-        // SHACL validation (urn:shacl:validate) — the JS shacl-engine here by default, or the
-        // real rudof module behind `?shacl=rudof`; same resource, same ValidationOutcome
+        // SHACL validation (urn:shacl:validate) — the real rudof module here by default, or
+        // the JS shacl-engine behind `?shacl=js`; same resource, same ValidationOutcome
         // contract as the CLI, where rudof is linked.
         shacl_space(),
         // The interactive runbook (`urn:runbook:*`) — the same module the native CLI
