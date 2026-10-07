@@ -43,7 +43,7 @@ ikigai-fn = "0.2.0" # the namespace this library owns MOVED: urn:fn:* -> urn:iki
                     # are URIs.)
 # The capability-gated file module, here on its wasm32 localStorage backend — the
 # browser proof that the same module serves files natively and in the page.
-ikigai-fs = "0.1.2"  # cacheable file Source (FileEndpoint::cacheable) for the golden thread
+ikigai-fs = "0.1.8"  # 0.1.8 = security floor (audit round 3, ledger #856); cacheable file Source (FileEndpoint::cacheable) for the golden thread
 ikigai-vocab = "0.1.22"  # ★ the version that added `space()` — `urn:ikigai:vocab`, the ns#
                          # ontology as a resolvable resource (ikigai-core #41, "Slice 1").
                          # AUDITED 2026-09-06, and the old bare `0.1` was a FALSE floor: it
