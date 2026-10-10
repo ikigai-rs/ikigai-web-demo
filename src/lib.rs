@@ -1134,18 +1134,27 @@ fn shacl_space() -> Arc<dyn Space> {
 /// Build the in-page kernel with the host `nature` reported by `urn:host:info`:
 /// the demo endpoints, `compose`, and the page shapes, behind the JSON-or-Turtle
 /// meta renderer. One kernel drives both the composed page and the terminal, so
-/// they share a space and a cache. Public so the WebTransport server
-/// (`src/bin/server.rs`) resolves against the same space — with its own nature.
+/// they share a space and a cache.
+///
+/// The file module's jail is `ws`: in the page that is the virtual `ws` segment of
+/// `localStorage`, which is what the page's `urn:cap:fs:*:ws/<id>` scopes are spelled
+/// against. On native the same `ws` would be a directory relative to the process's
+/// working directory, so a native host calls [`build_kernel_in`] with an absolute root
+/// instead — the WebTransport server (`src/bin/server.rs`) does (ledger #183).
 pub fn build_kernel(nature: &'static str) -> Kernel {
     build_kernel_in(nature, "ws")
 }
 
 /// [`build_kernel`] with the file module's jail root chosen by the caller. In the page
-/// the root is the virtual `ws` segment of `localStorage`; on native it is a directory
-/// relative to the process, and a test that walks the kernel — the conformance suite
-/// FIRES `Sink` and `Delete` on `urn:file:*` — must hand it a scratch directory rather
-/// than write beside the sources. Everything else is identical: same spaces, same
-/// renderer, same alias table.
+/// the root is the virtual `ws` segment of `localStorage`; on native it is a directory,
+/// and it should be ABSOLUTE: the endpoint opens its root on every request, so a relative
+/// one follows the process's working directory. The WebTransport server passes the
+/// canonical path it resolved at startup, and a test that walks the kernel — the
+/// conformance suite FIRES `Sink` and `Delete` on `urn:file:*` — hands it a scratch
+/// directory rather than write beside the sources. A path-ACL scope is spelled against
+/// whatever root is given (`ikigai-fs` places scopes against the root's spelling), so an
+/// absolute root takes `urn:cap:fs:read:<root>/…`, not the page's `ws/…`. Everything else
+/// is identical: same spaces, same renderer, same alias table.
 pub fn build_kernel_in(nature: &'static str, file_root: impl Into<std::path::PathBuf>) -> Kernel {
     // Register the browser-only Identity tab so the shared runbook strip lists it
     // (idempotent). Its panel is `urn:runbook:identity`, bound below.

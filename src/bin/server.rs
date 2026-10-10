@@ -10,7 +10,20 @@
 //! TLS is a self-signed cert; the browser trusts it via WebTransport's
 //! `serverCertificateHashes` (no CA). The server prints the hash to paste/pass
 //! to the page.
+//!
+//! ```text
+//! ikigai-net-server [PORT] [--root DIR]
+//! ```
+//!
+//! `PORT` defaults to 4433. `--root` names the file module's jail (`urn:file:*`); without
+//! it the jail is `<data home>/web-demo/ws` (`~/.ikigai/web-demo/ws`). Either way the
+//! server resolves the jail to an ABSOLUTE, canonical path once, at startup, creates it if
+//! it is missing, and prints it. It used to be the relative `ws`, so the files a client
+//! read and wrote depended on the directory the server happened to be launched from
+//! (ledger #183). A path-ACL scope sent with a capability is spelled against that printed
+//! path (`urn:cap:fs:read:<root>/…`), the spelling `ikigai-fs` documents.
 
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -26,10 +39,28 @@ const MAX_CALL: usize = 8 * 1024 * 1024;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let port: u16 = std::env::args()
-        .nth(1)
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(4433);
+    let args = match Args::parse(std::env::args().skip(1)) {
+        Ok(Some(args)) => args,
+        Ok(None) => {
+            println!("{USAGE}");
+            return Ok(());
+        }
+        Err(e) => {
+            eprintln!("ikigai-net-server: {e}\n{USAGE}");
+            std::process::exit(2);
+        }
+    };
+    let port = args.port;
+    // The jail, made absolute and canonical ONCE, here: the endpoint opens its root on
+    // every request, so a relative root would follow the process's working directory.
+    let root = jail_root(
+        args.root,
+        ikigai_core::config::data_home(),
+        &std::env::current_dir()?,
+    )?;
+    std::fs::create_dir_all(&root)
+        .map_err(|e| format!("cannot create the file jail {}: {e}", root.display()))?;
+    let root = std::fs::canonicalize(&root)?;
 
     // Self-signed cert valid for localhost; the browser pins its SHA-256.
     let identity = Identity::self_signed(["localhost", "127.0.0.1", "::1"])?;
@@ -43,8 +74,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("ikigai WebTransport server  →  https://127.0.0.1:{port}");
     println!("cert sha-256: {hash_hex}");
     println!("open the network demo page with  #cert={hash_hex}  in the URL");
+    println!("file jail (urn:file:*): {}", root.display());
 
-    let kernel = Arc::new(ikigai_web_demo::build_kernel("Remote (WebTransport)"));
+    let kernel = Arc::new(ikigai_web_demo::build_kernel_in(
+        "Remote (WebTransport)",
+        root,
+    ));
 
     let config = ServerConfig::builder()
         .with_bind_default(port)
@@ -61,6 +96,72 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 eprintln!("session ended: {e}");
             }
         });
+    }
+}
+
+const USAGE: &str = "usage: ikigai-net-server [PORT] [--root DIR]\n  \
+    PORT        UDP port to serve WebTransport on (default 4433)\n  \
+    --root DIR  the file jail for urn:file:* (default <data home>/web-demo/ws, \
+    i.e. ~/.ikigai/web-demo/ws)";
+
+/// The command line, parsed. `Ok(None)` is a request for the usage text.
+#[derive(Debug, PartialEq)]
+struct Args {
+    port: u16,
+    root: Option<PathBuf>,
+}
+
+impl Args {
+    fn parse(args: impl IntoIterator<Item = String>) -> Result<Option<Args>, String> {
+        let mut port = None;
+        let mut root = None;
+        let mut args = args.into_iter();
+        while let Some(arg) = args.next() {
+            if arg == "-h" || arg == "--help" {
+                return Ok(None);
+            } else if arg == "--root" {
+                let dir = args.next().ok_or("--root needs a directory")?;
+                root = Some(PathBuf::from(dir));
+            } else if let Some(dir) = arg.strip_prefix("--root=") {
+                root = Some(PathBuf::from(dir));
+            } else if arg.starts_with('-') {
+                return Err(format!("unknown option `{arg}`"));
+            } else if port.is_none() {
+                // Refused rather than defaulted: a typo here used to serve on 4433
+                // without a word.
+                port = Some(
+                    arg.parse()
+                        .map_err(|_| format!("`{arg}` is not a port number"))?,
+                );
+            } else {
+                return Err(format!("unexpected argument `{arg}`"));
+            }
+        }
+        if root.as_deref().is_some_and(|r| r.as_os_str().is_empty()) {
+            return Err("--root needs a directory".into());
+        }
+        Ok(Some(Args {
+            port: port.unwrap_or(4433),
+            root,
+        }))
+    }
+}
+
+/// The file jail as an absolute path: `--root` if given (a relative one is taken
+/// against `cwd`, the directory the operator typed it in, and fixed from then on),
+/// else `<data home>/web-demo/ws`. With neither a `--root` nor a known data home
+/// there is no answer, and guessing one relative to `cwd` is the bug this replaces.
+fn jail_root(
+    flag: Option<PathBuf>,
+    data_home: Option<PathBuf>,
+    cwd: &Path,
+) -> Result<PathBuf, String> {
+    match flag {
+        Some(dir) if dir.is_absolute() => Ok(dir),
+        Some(dir) => Ok(cwd.join(dir)),
+        None => data_home
+            .map(|home| home.join("web-demo").join("ws"))
+            .ok_or_else(|| "no data home (HOME is unset): pass --root DIR".to_string()),
     }
 }
 
@@ -129,4 +230,76 @@ fn dispatch(kernel: &Kernel, bytes: &[u8]) -> Vec<u8> {
         Err(e) => Reply::Error(format!("undecodable call: {e}")),
     };
     encode(&reply).unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(args: &[&str]) -> Result<Option<Args>, String> {
+        Args::parse(args.iter().map(|a| a.to_string()))
+    }
+
+    #[test]
+    fn the_jail_is_never_relative_to_the_working_directory() {
+        let cwd = Path::new("/launched/from/here");
+        let home = Some(PathBuf::from("/home/b/.ikigai"));
+        // No flag: the data home, wherever the server was launched.
+        let default = jail_root(None, home.clone(), cwd).unwrap();
+        assert_eq!(default, PathBuf::from("/home/b/.ikigai/web-demo/ws"));
+        assert!(!default.starts_with(cwd));
+        // An absolute flag is taken as given.
+        assert_eq!(
+            jail_root(Some("/srv/ws".into()), home.clone(), cwd).unwrap(),
+            PathBuf::from("/srv/ws")
+        );
+        // A relative flag is resolved once, against where it was typed.
+        assert_eq!(
+            jail_root(Some("ws".into()), home, cwd).unwrap(),
+            PathBuf::from("/launched/from/here/ws")
+        );
+        // No flag and no data home: refused, not guessed.
+        assert!(jail_root(None, None, cwd).is_err());
+        for root in [
+            jail_root(None, Some("/h/.ikigai".into()), cwd).unwrap(),
+            jail_root(Some("ws".into()), None, cwd).unwrap(),
+        ] {
+            assert!(root.is_absolute(), "{}", root.display());
+        }
+    }
+
+    #[test]
+    fn the_command_line_takes_a_port_and_a_root() {
+        assert_eq!(
+            parse(&[]).unwrap(),
+            Some(Args {
+                port: 4433,
+                root: None
+            })
+        );
+        assert_eq!(
+            parse(&["47433", "--root", "/srv/ws"]).unwrap(),
+            Some(Args {
+                port: 47433,
+                root: Some("/srv/ws".into())
+            })
+        );
+        assert_eq!(
+            parse(&["--root=/srv/ws"]).unwrap(),
+            Some(Args {
+                port: 4433,
+                root: Some("/srv/ws".into())
+            })
+        );
+        assert_eq!(parse(&["--help"]).unwrap(), None);
+        for bad in [
+            &["44x3"][..],
+            &["--root"],
+            &["--root="],
+            &["--jail", "x"],
+            &["1", "2"],
+        ] {
+            assert!(parse(bad).is_err(), "{bad:?} should be refused");
+        }
+    }
 }
