@@ -41,15 +41,18 @@ concurrency:
 # building once ikigai-core 0.1.78 made `Resolved` constructible only through
 # `Resolved::new`: Pages was red from ~2026-09-27 until these moved (ledger #728).
 #
-# SHACL_REV is the ikigai-shacl 0.2.0 release commit (shacl PR #12, published 2026-10-04):
-# the first release whose `module` feature builds for wasm32 at all (rudof >= 0.3.22,
-# ledger #206). It moved here from d8340c0, the unreleased raise on main (shacl PR #11).
+# SHACL_REV was first the ikigai-shacl 0.2.0 release commit (shacl PR #12): the first release
+# whose `module` feature builds for wasm32 at all (rudof >= 0.3.22, ledger #206). It is now the
+# 0.3.2 release commit (shacl PR #20), the security floor: caller SPARQL in a shapes graph never
+# reaches the network (ledger #1099, #1101). XSLT_REV and JSONLD_REV moved with it to their 0.2.1
+# release commits (the caller-input bounds of ledger #916 and #1042), so each module wasm is the
+# code the native build locks, as above.
 #
 # To bump: replace the SHA, push, and let `smoke` vet the result. That is what it is for.
 env:
-  XSLT_REV: f37789cbdbb1ee2fcdd6d9a5fee243f401f889e2    # ikigai-xslt 0.1.4 (xslt PR #14)
-  JSONLD_REV: 93b328c66240dd533cb5c5dfb9952b1e922d2ba4  # ikigai-jsonld 0.1.3 (jsonld PR #7)
-  SHACL_REV: 75ae4ac7058edfbe63d19ecc8cc7109fe67c5b74   # ikigai-shacl 0.2.0 (shacl PR #12)
+  XSLT_REV: 1760b370fb13defc72a535130464374ac4de58b6    # ikigai-xslt 0.2.1 (xslt PR #18)
+  JSONLD_REV: 452fb1cef110c8941cc9b554e5c3285c37359c09  # ikigai-jsonld 0.2.1 (jsonld PR #11)
+  SHACL_REV: 426cbee017cdeaa760faf268828243d739f3c6dd   # ikigai-shacl 0.3.2 (shacl PR #20)
 
 jobs:
   build:

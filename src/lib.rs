@@ -1734,12 +1734,15 @@ thread_local! {
             // urn:time:now every second: `runs` climbs each tick but the cached value
             // recomputes only on the minute — the cache demo, live on the Control plane.
             // Persistent ⇒ the greeter Stop's cancel-all leaves it running; the nav clock
-            // display is untouched (its own htmx poll).
+            // display is untouched (its own htmx poll). It fires under NO scopes: reading
+            // the clock needs none, and since ikigai-time 0.4 a job states the authority it
+            // fires under rather than inheriting the registry's (ledger #79).
             let _ = registry.schedule_persistent(
                 "urn:time:now".to_string(),
                 Verb::Source,
                 ikigai_time::Schedule::Every(std::time::Duration::from_secs(1)),
                 true,
+                Capability::scoped(Vec::<String>::new()),
             );
         }
         let engine = ikigai_engine::Engine::new(kernel);

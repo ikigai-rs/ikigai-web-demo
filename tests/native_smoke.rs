@@ -13,6 +13,11 @@
 //! `urn:httpGet` against a loopback stub, which only a server with a native transport
 //! installed can answer. Every step is bounded: a server that never prints, never binds or
 //! never answers fails here, loudly, with what it did print.
+//!
+//! The second test is the converse: an egress the server must NOT make. A shapes graph sent
+//! to `urn:shacl:validate` carrying a SPARQL `SERVICE` reached a loopback stub through
+//! rudof's HTTP client until ikigai-shacl 0.3.2 (ledger #1101, #1099); it now reaches it zero
+//! times and is refused, typed.
 
 mod common;
 
@@ -229,6 +234,217 @@ async fn the_native_server_resolves_the_clock_and_a_granted_fetch() {
         );
     };
     tokio::time::timeout(BOUND, smoke)
+        .await
+        .expect("the native server answered within the bound");
+    drop(server);
+}
+
+/// A plain-HTTP stub that counts the connections it is sent, answering each with an empty
+/// SPARQL result set so a client that does reach it finishes. A connection that opens with
+/// [`SENTINEL`] is [`SparqlStub::connections`]' own and is not counted: accepts are served in
+/// backlog order, so once it is answered every earlier connection has been counted, and the
+/// "zero" below needs no sleep and cannot race. (The pattern is ikigai-shacl's
+/// `tests/service_egress.rs`.)
+struct SparqlStub {
+    addr: SocketAddr,
+    seen: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+}
+
+const SENTINEL: &[u8] = b"SENTINEL\r\n";
+
+impl SparqlStub {
+    fn start() -> SparqlStub {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind the stub");
+        let addr = listener.local_addr().expect("addr");
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let record = std::sync::Arc::clone(&seen);
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                // Read the head (or the sentinel), then any body, so closing never resets
+                // the client mid-request.
+                let mut head = Vec::new();
+                let mut byte = [0u8; 1];
+                while stream.read(&mut byte).map(|n| n == 1).unwrap_or(false) {
+                    head.push(byte[0]);
+                    if head == SENTINEL || head.len() > 64 * 1024 {
+                        break;
+                    }
+                    if head.ends_with(b"\r\n\r\n") {
+                        let text = String::from_utf8_lossy(&head).to_ascii_lowercase();
+                        let length = text
+                            .lines()
+                            .find_map(|l| l.strip_prefix("content-length:"))
+                            .and_then(|n| n.trim().parse::<usize>().ok())
+                            .unwrap_or(0);
+                        let mut body = vec![0u8; length];
+                        let _ = stream.read_exact(&mut body);
+                        break;
+                    }
+                }
+                if head == SENTINEL {
+                    let _ = stream.write_all(b"ok");
+                    continue;
+                }
+                let line = String::from_utf8_lossy(&head);
+                record
+                    .lock()
+                    .expect("log")
+                    .push(line.lines().next().unwrap_or("").to_string());
+                let body = r#"{"head":{"vars":["s"]},"results":{"bindings":[]}}"#;
+                let _ = write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/sparql-results+json\r\n\
+                     Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+            }
+        });
+        SparqlStub { addr, seen }
+    }
+
+    fn url(&self) -> String {
+        format!("http://{}/sparql", self.addr)
+    }
+
+    /// The request line of every connection the stub has been sent, after a sentinel round
+    /// trip.
+    fn connections(&self) -> Vec<String> {
+        use std::io::{Read, Write};
+        let mut sentinel = std::net::TcpStream::connect(self.addr).expect("sentinel connect");
+        sentinel.write_all(SENTINEL).expect("sentinel write");
+        let mut ack = Vec::new();
+        sentinel.read_to_end(&mut ack).expect("sentinel read");
+        assert_eq!(ack, b"ok", "the stub did not answer its sentinel");
+        self.seen.lock().expect("log").clone()
+    }
+}
+
+const SHACL_HEAD: &str = "@prefix sh: <http://www.w3.org/ns/shacl#> .\n\
+                          @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n\
+                          @prefix ex: <http://example.org/> .\n";
+
+const SHACL_DATA: &str = "@prefix ex: <http://example.org/> .\nex:a a ex:Person ; ex:p ex:b .\n";
+
+/// `text` with every character a SPARQL `IRIREF` forbids written as a Turtle `\uXXXX` escape,
+/// so it can sit inside `<…>` in a Turtle document (rudof's lenient reader keeps them).
+fn escaped_iri(text: &str) -> String {
+    text.chars()
+        .map(|c| match c {
+            '<' | '>' | '"' | '{' | '}' | '|' | '^' | '`' | '\\' | '\0'..=' ' => {
+                format!("\\u{:04X}", c as u32)
+            }
+            c => c.to_string(),
+        })
+        .collect()
+}
+
+/// The SHACL-SPARQL egress (ledger #1101, #1099): this server links `ikigai-shacl` natively,
+/// rudof evaluates a shape's `sh:sparql` with oxigraph's HTTP client compiled in, and
+/// `urn:shacl:validate` declares no capability, so a `SERVICE` in a shapes graph (or smuggled
+/// in through a data IRI rudof splices into `VALUES`) made THIS server connect out with no
+/// `urn:cap:net:*` in sight. Under the root capability the server resolves every call as,
+/// each probe must reach the stub zero times and come back a typed refusal naming the
+/// argument it arrived in. Before ikigai-shacl 0.3.2 the `select` probe connected and
+/// answered a report.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_native_server_never_lets_a_shapes_graph_reach_the_network() {
+    let server = start();
+    let stub = SparqlStub::start();
+    let addr = server.addr;
+    let cert = server.cert.clone();
+    let url = stub.url();
+    let service = format!("SERVICE <{url}> {{ ?s ?p ?o }}");
+    let breakout = escaped_iri(&format!(
+        "http://example.org/x> }} {service} VALUES ?q {{ <http://example.org/y"
+    ));
+    let select = |query: &str| {
+        format!(
+            "{SHACL_HEAD}ex:S a sh:NodeShape ; sh:targetClass ex:Person ;\n  \
+             sh:sparql [ sh:select \"\"\"{query}\"\"\" ] .\n"
+        )
+    };
+    // (name, data, shapes, the argument the refusal names)
+    let probes: Vec<(&str, String, String, &str)> = vec![
+        // The claim's own shape: a node shape's `sh:select` with a SERVICE.
+        (
+            "select",
+            SHACL_DATA.into(),
+            select(&format!("SELECT $this WHERE {{ $this a ?t . {service} }}")),
+            "shapes",
+        ),
+        // A `sh:declare` prefix NAME carrying the whole query; no `sh:select` names SERVICE.
+        (
+            "prefix-name",
+            SHACL_DATA.into(),
+            format!(
+                "{SHACL_HEAD}ex:S a sh:NodeShape ; sh:targetClass ex:Person ;\n  \
+                 sh:sparql [ sh:prefixes ex:decls ; sh:select \"# nothing\" ] .\n\
+                 ex:decls sh:declare [ sh:prefix \"\"\"a: <http://example.org/a/> SELECT $this WHERE {{ {service} }} #\"\"\" ;\n  \
+                 sh:namespace \"http://example.org/b/\"^^xsd:anyURI ] .\n"
+            ),
+            "shapes",
+        ),
+        // From the DATA graph: a literal's datatype IRI, which rudof's reader does not
+        // re-validate and its evaluator writes into `VALUES ?this { … }` unescaped.
+        (
+            "data-literal-datatype",
+            format!("@prefix ex: <http://example.org/> .\nex:a ex:p \"v\"^^<{breakout}> .\n"),
+            format!(
+                "{SHACL_HEAD}ex:S a sh:NodeShape ; sh:targetObjectsOf ex:p ;\n  \
+                 sh:sparql [ sh:select \"\"\"SELECT $this WHERE {{ OPTIONAL {{ ?s ?p $this }} }}\"\"\" ] .\n"
+            ),
+            "data",
+        ),
+    ];
+    let probe = async move {
+        let client = Endpoint::client(
+            ClientConfig::builder()
+                .with_bind_default()
+                .with_server_certificate_hashes([cert])
+                .build(),
+        )
+        .expect("client");
+        let connection = client
+            .connect(format!("https://{addr}/"))
+            .await
+            .expect("a WebTransport session with the server");
+        let mut wrong = Vec::new();
+        for (name, data, shapes, arg) in probes {
+            let before = stub.connections().len();
+            let reply = call(
+                &connection,
+                &Call::Issue(request(
+                    "urn:shacl:validate",
+                    &[("data", data.as_str()), ("shapes", shapes.as_str())],
+                )),
+            )
+            .await;
+            let reached = stub.connections().len() - before;
+            if reached != 0 {
+                wrong.push(format!(
+                    "{name}: the server reached the stub {reached} time(s)"
+                ));
+            }
+            match &reply {
+                Reply::ErrorTyped(ikigai_wire::WireError::InvalidArgument {
+                    name: got,
+                    detail,
+                }) if got == arg && detail.contains("SERVICE") => {}
+                other => wrong.push(format!(
+                    "{name}: expected a refusal naming `{arg}`, got {}",
+                    match other {
+                        Reply::Resolved(repr, _) =>
+                            format!("a report: {}", String::from_utf8_lossy(&repr.bytes)),
+                        other => format!("{other:?}"),
+                    }
+                )),
+            }
+        }
+        assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+    };
+    tokio::time::timeout(BOUND, probe)
         .await
         .expect("the native server answered within the bound");
     drop(server);

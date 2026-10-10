@@ -27,9 +27,11 @@
 //! - **The module's ACL** (the parameterized rule): a session holding a grant under the
 //!   family but not for THIS path (`ws/abc` against `someone-else/…`) passes the floor,
 //!   and the file endpoint's own longest-prefix rule refuses inside `invoke`. That refusal
-//!   is a typed `Denied` too, but it leaves NO trace event — core records an invocation
-//!   only after `invoke` returns `Ok` (reported for the hub) — so the witness is the disk:
-//!   no file, no directory.
+//!   is a typed `Denied` too, and since core 0.1.92 it is a trace node of its own (ledger
+//!   #559, #20): one TIMED event tagged `(`[`FAILED_NOTE`]`, "denied")` — the endpoint ran
+//!   and refused — never [`DENIED_NOTE`], which is the floor's key. (Before 0.1.92 core
+//!   recorded an invocation only after `invoke` returned `Ok`, so this refusal left no
+//!   event at all.) The second witness is the disk: no file, no directory.
 //!
 //! Typed, twice: the kernel, issued the same request under the same session capability,
 //! answers `Error::Denied`; and the text the adapter shows begins `denied:` — the engine's
@@ -41,6 +43,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use ikigai_core::{
     ArgRef, Capability, Error, Iri, Kernel, Request, TraceEvent, Tracer, Verb, DENIED_NOTE,
+    FAILED_NOTE,
 };
 use ikigai_engine::{Action, Engine};
 use ikigai_web_demo::{build_kernel_in, define_cap_profiles};
@@ -149,8 +152,9 @@ fn read(path: &Path) -> String {
 /// `ws/<id>` scopes the passkey bridge mints): three steps, extracted and run. The write
 /// inside the segment lands, the read returns it, and the write OUTSIDE the segment is
 /// refused by the file module's ACL — typed at the kernel, `denied:` through the adapter —
-/// with nothing on disk and (since the refusal is the module's, inside `invoke`) no trace
-/// event at all: the floor passed, because the session does hold a `write` grant.
+/// with nothing on disk and exactly one trace event, TIMED and tagged `("failed",
+/// "denied")`: the floor passed, because the session does hold a `write` grant, and the
+/// module refused inside `invoke`.
 #[test]
 fn an_identity_step_outside_the_segment_is_denied_and_never_reaches_the_disk() {
     let s = session();
@@ -187,8 +191,19 @@ fn an_identity_step_outside_the_segment_is_denied_and_never_reaches_the_disk() {
     let after = s.trace.events();
     assert_eq!(
         after.len(),
-        before,
-        "the module's ACL refused inside invoke, which core does not trace: {after:?}"
+        before + 1,
+        "one event, the module's refusal: {after:?}"
+    );
+    let refusal = &after[before];
+    assert_eq!(refusal.target, "urn:file:someone-else/secret.txt");
+    assert_eq!(
+        refusal.notes,
+        vec![(FAILED_NOTE.to_string(), "denied".to_string())],
+        "refused by the module inside invoke, not at the floor"
+    );
+    assert!(
+        refusal.started.is_some() && !refusal.notes.iter().any(|(k, _)| k == DENIED_NOTE),
+        "the endpoint ran: {refusal:?}"
     );
     assert!(
         matches!(
