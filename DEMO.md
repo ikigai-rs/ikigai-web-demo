@@ -356,10 +356,14 @@ wasm-bindgen --target web --out-dir dist \
 # run the kernel server (prints a cert hash) + serve the page:
 cargo run --bin ikigai-net-server          # → https://127.0.0.1:4433 + cert sha-256
                                            #   + file jail ~/.ikigai/web-demo/ws (--root DIR)
+                                           #   loopback only (--bind ADDR); sessions only
+                                           #   from the page origins (--allow-origin O)
 cd dist && python3 -m http.server 8087
 ```
 
-Open `http://127.0.0.1:8087/net.html`, paste the printed cert hash, **Connect**.
+Open `http://127.0.0.1:8087/net.html`, paste the printed cert hash, **Connect**. (Serve
+the page from another port and pass `--allow-origin http://127.0.0.1:<port>`, or the
+server refuses the session.)
 The browser sends a `compose` request as `ikigai-wire` bytes; the **server**
 composes the page and streams the HTML back — first pull `computed`, second
 `cached` (the server's cache persists). Same page as demo 0, but the kernel is
