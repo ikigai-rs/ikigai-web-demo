@@ -1386,9 +1386,9 @@ dependencies = [
 
 [[package]]
 name = "ikigai-conformance"
-version = "0.2.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a9d2b73584238eb0c30eba074d6fab60111b4709782b796df782115db23c8523"
+checksum = "5f3d0281cc6f087acc6561d1b3c6e3b9f45ff6d030b0ce6f94c25bcd1c6584b8"
 dependencies = [
  "futures",
  "ikigai-core",
@@ -1399,9 +1399,9 @@ dependencies = [
 
 [[package]]
 name = "ikigai-core"
-version = "0.1.84"
+version = "0.1.93"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "904d0b3703e28aaf76c9a235413a432512a7eede5c12fe605d67fa56173edd9a"
+checksum = "f3687ff94ace80d29d4d73b664fb7b69d5a70a4c5bd5d51e151be08690a45937"
 dependencies = [
  "async-trait",
  "blake3",
@@ -1413,9 +1413,9 @@ dependencies = [
 
 [[package]]
 name = "ikigai-engine"
-version = "0.1.36"
+version = "0.1.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a958bc1f45929ce6cffa6d03e8ec88f0a7b4f355db5884f73fcbc25564115905"
+checksum = "eea95be29307e91536ef739214a7bfecdd9da7e83d6a6bd4d9db392d69a8322b"
 dependencies = [
  "chrono",
  "futures",
@@ -1427,9 +1427,9 @@ dependencies = [
 
 [[package]]
 name = "ikigai-fn"
-version = "0.2.2"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c0701597c9055f84d3dd98dfcb3c5a2fd2da49300fa53471db14085256c6efc8"
+checksum = "e185b92413bb8f962698093e87c314ff5459b2c4a4b4c8dd83f5dd6407d6a5be"
 dependencies = [
  "async-trait",
  "futures-util",
@@ -1450,9 +1450,9 @@ dependencies = [
 
 [[package]]
 name = "ikigai-http"
-version = "0.1.8"
+version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "83cfa823c747b41f66afc412fe81030c570aed36b300494fc5769bcf0c97f0b9"
+checksum = "428f4d212d0828e0ae9eee30bb58424ea26439915fac2612286cb08f20131411"
 dependencies = [
  "async-trait",
  "ikigai-core",
@@ -1461,9 +1461,9 @@ dependencies = [
 
 [[package]]
 name = "ikigai-jsonld"
-version = "0.1.3"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6cecd5ced68a7e24302b7dec67d13918bb9179e934ff9515cf77811f4017e1c0"
+checksum = "827d8cbdb90445352ef080c2ea0b9720fbd21a6f9fa0c724119f70b0e9e57025"
 dependencies = [
  "async-trait",
  "contextual",
@@ -1474,9 +1474,9 @@ dependencies = [
 
 [[package]]
 name = "ikigai-module"
-version = "0.3.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e013021b8f05e5fcb63f2904fcf621deb0248d97354bb9e2004a74699f1b5739"
+checksum = "9833ce1a2e724c1f13e35ca4743115c76dea2221340911bccd4c3f138b71e2a8"
 dependencies = [
  "async-trait",
  "futures",
@@ -1489,22 +1489,23 @@ dependencies = [
 
 [[package]]
 name = "ikigai-rdf"
-version = "0.1.10"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fb3791b48ed9c7172d933bdd4abdfa6ffa50474fef1fe8301528dfca75e717c0"
+checksum = "691a2e7d51818c6f3807caf98251e796b91788d39aa6b0a4a65cae679536d6e9"
 dependencies = [
  "async-trait",
  "getrandom 0.3.4",
  "ikigai-core",
  "oxrdf",
  "oxrdfio",
+ "quick-xml",
 ]
 
 [[package]]
 name = "ikigai-resolve"
-version = "0.1.36"
+version = "0.1.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2e4961775f1b9accf764746f9a8df552b917603af1dea6479cb8209f383e9fc"
+checksum = "9e7b5c0ded3b3710f2d0b225c09b2f23705e34bdae69c562de86337550458efe"
 dependencies = [
  "async-trait",
  "futures",
@@ -1515,9 +1516,9 @@ dependencies = [
 
 [[package]]
 name = "ikigai-runbook"
-version = "0.1.14"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3d88687372dfacb8d913c4ddcd1b876ccc336708843de8a10bb1df6f353df6d4"
+checksum = "35e868f96c11863e2e8a2740a839bc6d7ddab6d54fae5f874e47e15b7a84d85e"
 dependencies = [
  "ikigai-core",
  "serde",
@@ -1526,36 +1527,54 @@ dependencies = [
 
 [[package]]
 name = "ikigai-shacl"
-version = "0.1.4"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "37c6846ae95a669fd6bd394770b778752a8bed2cad429a893cf0cb5d4dd9ca1b"
+checksum = "4cea5375b88ee4911b99371daef0529f540fae07bc820478f996304d0bc421d3"
 dependencies = [
  "async-trait",
  "futures",
  "ikigai-core",
- "prefixmap",
+ "ikigai-store",
+ "oxrdf",
  "rudof_rdf",
  "serde",
  "serde_json",
  "shacl",
+ "spargebra",
  "sparql_service",
 ]
 
 [[package]]
 name = "ikigai-sniff"
-version = "0.1.10"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d09fecc8db80c705605277390dfc45b5bb4200af7a173f934e92ecc11430080"
+checksum = "c0d178fa2e68a39f558f802941e9cf77579a34644ad1c46139478238c3608a96"
 dependencies = [
  "async-trait",
  "ikigai-core",
 ]
 
 [[package]]
-name = "ikigai-time"
-version = "0.2.0"
+name = "ikigai-store"
+version = "0.2.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1619e2a7d57681b69a2975e4cd67674c5142e9602e1661b60ea4cf2d4ecb8760"
+checksum = "5f340fc7d051e9b49f39934bc589641ecd8fd4bf13fd44cd8f61cfe815dc007c"
+dependencies = [
+ "async-trait",
+ "ikigai-core",
+ "oxigraph",
+ "oxiri 0.2.11",
+ "serde",
+ "serde_json",
+ "spargebra",
+ "toml 0.8.23",
+]
+
+[[package]]
+name = "ikigai-time"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f6f701b938dac9b958e56230eabb76c5f3a0175dec58aa7a0970688ee0231c98"
 dependencies = [
  "ikigai-core",
  "ikigai-resolve",
@@ -1563,9 +1582,9 @@ dependencies = [
 
 [[package]]
 name = "ikigai-vocab"
-version = "0.1.84"
+version = "0.1.93"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0cdcae2932101c63402a593eba7d12e16a14656ec3aea90b40b5d0e5ac310d31"
+checksum = "e026bf10754d646becd25cf072e068930b9ae4ea55d4ebced3d97b62f996f96b"
 dependencies = [
  "ikigai-core",
  "serde_json",
@@ -1608,9 +1627,9 @@ dependencies = [
 
 [[package]]
 name = "ikigai-wire"
-version = "0.1.36"
+version = "0.1.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ba5d095eb60cb18cbb29f6aac00b60651dd9388f6a6377ad69768fb1ada8ec7"
+checksum = "e5bc3dadfb70804e54778e714fe7429c8d10231f956d2131092368c5325c51b2"
 dependencies = [
  "ikigai-core",
  "ikigai-resolve",
@@ -1620,12 +1639,13 @@ dependencies = [
 
 [[package]]
 name = "ikigai-xslt"
-version = "0.1.4"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0156a4b1a8fbdea0db83749b03c295f163e1adeae1734a599d9878d0a302c969"
+checksum = "877f814e03d7f1944b2666a4cd11514940a416d85d1b2c734220ae4714cf7d0a"
 dependencies = [
  "async-trait",
  "ikigai-core",
+ "qualname",
  "xrust",
 ]
 
@@ -2389,6 +2409,7 @@ checksum = "7f6632dd080bd07676f06e70254ff5862c9943e9483d700fa7258df73a3f9a6a"
 dependencies = [
  "dashmap",
  "getrandom 0.3.4",
+ "js-sys",
  "libc",
  "oxhttp",
  "oxiri 0.2.11",
@@ -2488,6 +2509,7 @@ version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c17c2ae62ac34fda465f6331105906c0e17b4e088dac3249e1f229b962062503"
 dependencies = [
+ "js-sys",
  "thiserror 2.0.21",
 ]
 
@@ -2682,9 +2704,9 @@ dependencies = [
 
 [[package]]
 name = "prefixmap"
-version = "0.3.21"
+version = "0.3.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "58cec0c0a9fd11aeebeec8f894c7f75bcf49af19e5d98c936e9b12bf9a2c49d8"
+checksum = "6da048db841ac92680671198e3e32b1a858393f00239708a3d74125025904ead"
 dependencies = [
  "colored",
  "indexmap 2.14.2",
@@ -2709,7 +2731,7 @@ version = "3.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e67ba7e9b2b56446f1d419b1d807906278ffa1a658a8a5d8a39dcb1f5a78614f"
 dependencies = [
- "toml_edit",
+ "toml_edit 0.25.15+spec-1.1.0",
 ]
 
 [[package]]
@@ -3176,14 +3198,14 @@ dependencies = [
  "dirs",
  "serde",
  "thiserror 2.0.21",
- "toml",
+ "toml 0.9.12+spec-1.1.0",
 ]
 
 [[package]]
 name = "rudof_iri"
-version = "0.3.24"
+version = "0.3.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d94635d3a2bb6767292b982ec2cd45c5d7c136187b7c6d367fba9238f38052c"
+checksum = "930abd3dcd341e45fbd39b3ab147ed6e3172a1334a4871df37ea4bd6a7974603"
 dependencies = [
  "getrandom 0.3.4",
  "getrandom 0.4.3",
@@ -3199,9 +3221,9 @@ dependencies = [
 
 [[package]]
 name = "rudof_rdf"
-version = "0.3.18"
+version = "0.3.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09953eaff267a862d9074cb0f8de61bf01c434144904fd4eb2e8441ab496993f"
+checksum = "300359eb9033b3e3585de4d7010c64b4b38cb3e0e4e04a9c071fb5b35a060fec"
 dependencies = [
  "colored",
  "const_format",
@@ -3234,7 +3256,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
- "toml",
+ "toml 0.9.12+spec-1.1.0",
  "tracing",
  "url",
 ]
@@ -3527,6 +3549,15 @@ dependencies = [
 
 [[package]]
 name = "serde_spanned"
+version = "0.6.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bf41e0cfaf7226dca15e8197172c295a782857fcb97fad1808a166870dee75a3"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "serde_spanned"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6662b5879511e06e8999a8a235d848113e942c9124f211511b16466ee2995f26"
@@ -3581,9 +3612,9 @@ dependencies = [
 
 [[package]]
 name = "shacl"
-version = "0.3.18"
+version = "0.3.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c880e38485944ba156b6044a6a389337467d6754c04a5f234afe82d79f68b3d"
+checksum = "686d8efa18fa0d43f540ce7f079e18dd39cb913f47d3ae7bbe7d584f340a65c9"
 dependencies = [
  "anyhow",
  "dashmap",
@@ -3601,7 +3632,7 @@ dependencies = [
  "serde",
  "sparql_service",
  "thiserror 2.0.21",
- "toml",
+ "toml 0.9.12+spec-1.1.0",
  "tracing",
 ]
 
@@ -3753,9 +3784,9 @@ dependencies = [
 
 [[package]]
 name = "sparql_service"
-version = "0.3.18"
+version = "0.3.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "528d905a9a57bfdbc5385cb502376cf1a957aacdfb2b69171fbb133c9811146f"
+checksum = "310b50486bcbe276829a42b8facb3648df8a8dfa9d3416a20ed59a5cf0bdcddc"
 dependencies = [
  "colored",
  "const_format",
@@ -3774,7 +3805,7 @@ dependencies = [
  "serde_json",
  "sparesults",
  "thiserror 2.0.21",
- "toml",
+ "toml 0.9.12+spec-1.1.0",
  "tracing",
 ]
 
@@ -4103,17 +4134,38 @@ dependencies = [
 
 [[package]]
 name = "toml"
+version = "0.8.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc1beb996b9d83529a9e75c17a1686767d148d70663143c7854d8b4a09ced362"
+dependencies = [
+ "serde",
+ "serde_spanned 0.6.9",
+ "toml_datetime 0.6.11",
+ "toml_edit 0.22.27",
+]
+
+[[package]]
+name = "toml"
 version = "0.9.12+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf92845e79fc2e2def6a5d828f0801e29a2f8acc037becc5ab08595c7d5e9863"
 dependencies = [
  "indexmap 2.14.2",
  "serde_core",
- "serde_spanned",
+ "serde_spanned 1.1.1",
  "toml_datetime 0.7.5+spec-1.1.0",
  "toml_parser",
  "toml_writer",
  "winnow 0.7.15",
+]
+
+[[package]]
+name = "toml_datetime"
+version = "0.6.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "22cddaf88f4fbc13c51aebbf5f8eceb5c7c5a9da2ac40a13519eb5b0a0e8f11c"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
@@ -4136,6 +4188,20 @@ dependencies = [
 
 [[package]]
 name = "toml_edit"
+version = "0.22.27"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "41fe8c660ae4257887cf66394862d21dbca4a6ddd26f04a3560410406a2f819a"
+dependencies = [
+ "indexmap 2.14.2",
+ "serde",
+ "serde_spanned 0.6.9",
+ "toml_datetime 0.6.11",
+ "toml_write",
+ "winnow 0.7.15",
+]
+
+[[package]]
+name = "toml_edit"
 version = "0.25.15+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1340ea94a5856333492c9064b02c778b191dd2c853778d9609debdcdfea3a614"
@@ -4154,6 +4220,12 @@ checksum = "1d38ac1cf9b95face32296c0a3ede1fdc270627c9d9c02a7274dd6d960dc4d56"
 dependencies = [
  "winnow 1.0.4",
 ]
+
+[[package]]
+name = "toml_write"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d99f8c9a7727884afe522e9bd5edbfc91a3312b36a77b5fb8926e4c31a41801"
 
 [[package]]
 name = "toml_writer"
@@ -4637,6 +4709,9 @@ name = "winnow"
 version = "0.7.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df79d97927682d2fd8adb29682d1140b343be4ac0f08fd68b7765d9c059d3945"
+dependencies = [
+ "memchr",
+]
 
 [[package]]
 name = "winnow"

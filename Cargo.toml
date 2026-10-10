@@ -18,16 +18,25 @@ path = "src/bin/server.rs"
 # Published crates from crates.io (graduated off the sibling path deps once
 # ikigai-core/ikigai-vocab were published at 0.1.0). This demo is a standalone
 # proof, intentionally not part of either repo's CI.
-ikigai-core = "0.1.63"  # Kernel::with_aliases + AliasTable — the logical-rewrite table this
+ikigai-core = "0.1.93"  # The re-pin to the published head (ledger #1101). 0.1.92 is the floor
+                        # tests/k_adapter.rs pins: a refusal a module returns inside `invoke`
+                        # is a TIMED trace event tagged ("failed", "denied") (ledger #559, #20);
+                        # below it that refusal left no event. 0.1.93 is the head it was built
+                        # and tested against.
+                        # (0.1.63 gave the older need: Kernel::with_aliases + AliasTable — the logical-rewrite table this
                         # host installs so `urn:fn:*` keeps resolving after ikigai-fn 0.2.0
                         # renamed its bindings to `urn:iki:fn:*`. A real floor: the API does
                         # not exist below 0.1.63, and without it the bump below would ship
                         # the demo with every `urn:fn:` name dead. (0.1.45 gave the older
                         # need: the Error TAXONOMY — Denied/NotFound/Timeout/Unavailable —
-                        # which decodeReply rebuilds from the wire's typed failure.)
+                        # which decodeReply rebuilds from the wire's typed failure.))
 # The reusable function library, linked in as a published module crate.
 # Compiled to wasm32 alongside this lib — the in-browser proof of module linkage.
-ikigai-fn = "0.2.0" # the namespace this library owns MOVED: urn:fn:* -> urn:iki:fn:*. A
+ikigai-fn = "0.4.1" # the published head (ledger #1101). 0.3.0 made compose a view template
+                    # language ($h{}/$r{}, {name} arguments, `||` fallbacks); none of this
+                    # host's markers holds a `{` or `||`, so they read as before. 0.4.0
+                    # names the space urn:iki:space:fn (ledger #987).
+                    # 0.2.0: the namespace this library owns MOVED: urn:fn:* -> urn:iki:fn:*. A
                     # module crate's resource names are its public interface, so a rename is
                     # a minor bump even though the Rust API is untouched — a patch would be
                     # adopted by a bare `cargo update` and take the old names out from under
@@ -37,14 +46,16 @@ ikigai-fn = "0.2.0" # the namespace this library owns MOVED: urn:fn:* -> urn:iki
                     # This host adopted 0.2.0 first (2026-09-04); `ikigai-cli` followed in
                     # 0.1.18 with a table of its own. The library still installs none —
                     # that is the design, not a lag. What the rule protects from here on is
-                    # content no host controls: `ikigai-runbook` 0.1.13 below still
+                    # content no host controls: `ikigai-runbook` (0.2.1 below, too) still
                     # hardcodes `source urn:fn:toUpper hello`.
                     # (0.1.2 gave urn:iki:fn:conditional — the lazy branch: if/then/else
                     # are URIs.)
 # The capability-gated file module, here on its wasm32 localStorage backend — the
 # browser proof that the same module serves files natively and in the page.
 ikigai-fs = "0.1.8"  # 0.1.8 = security floor (audit round 3, ledger #856); cacheable file Source (FileEndpoint::cacheable) for the golden thread
-ikigai-vocab = "0.1.22"  # ★ the version that added `space()` — `urn:ikigai:vocab`, the ns#
+ikigai-vocab = "0.1.93"  # the published head, beside core 0.1.93 (ledger #1101). The AUDIT
+                         # below is of the floor and still holds: 0.1.22 is the
+                         # version that added `space()` — `urn:ikigai:vocab`, the ns#
                          # ontology as a resolvable resource (ikigai-core #41, "Slice 1").
                          # AUDITED 2026-09-06, and the old bare `0.1` was a FALSE floor: it
                          # admitted 0.1.0/0.1.1, which have no `space()` at all, so a
@@ -66,14 +77,15 @@ ikigai-vocab = "0.1.22"  # ★ the version that added `space()` — `urn:ikigai:
 # The CLI's renderer-agnostic Engine — drives the in-page terminal — and its Resolver
 # seam. 0.1.4 is the async API (eval_async / issue_as_async) that lets the in-page
 # terminal drive the kernel on the JS event loop (M2).
-ikigai-engine = "0.1.17"  # tracks the ikigai-resolve 0.1.17 floor above (it re-exports the
+ikigai-engine = "0.1.44"  # the published head, in lockstep with resolve/wire (ledger #1101);
+                          # tracks the ikigai-resolve floor below (it re-exports the
                           # Resolver seam this host drives). 0.1.13 gave the older need: the
                           # structured-Error migration. 0.1.9 was the newest published
                           # version for a month and does not compile against a current
                           # ikigai-core; engine skipped 0.1.10-0.1.12, so 0.1.13 is at once
                           # the fix and the true minimum. (0.1.9 gave the older need:
                           # quote-aware named args — title="two words" — + pipe routing.)
-ikigai-resolve = "0.1.17"  # ★ the version that COMPILES against ikigai-core 0.1.64+, which
+ikigai-resolve = "0.1.44"  # the published head (ledger #1101). 0.1.17 was the version that COMPILES against ikigai-core 0.1.64+, which
                            # added a `canonical` field to `Resolved`. Every crate that builds
                            # that struct literally (rather than through a constructor) stops
                            # compiling — a SOURCE break arriving in a patch, which a bare
@@ -84,12 +96,14 @@ ikigai-resolve = "0.1.17"  # ★ the version that COMPILES against ikigai-core 0
 # The on-wire Call/Reply protocol — the WASM codec (network demo) speaks it in the
 # browser, and the server speaks it on the other end. Same bytes as ikigai-ipc/quic.
 # Also reused for the module-session codec (encode/decode of ModuleCall/ModuleReply).
-ikigai-wire = "0.1.10"  # wire v7: WireError + Reply::ErrorTyped (a failure crosses with
+ikigai-wire = "0.1.44"  # the published head (ledger #1101); wire v8 adds WireError::Conflict.
+                        # wire v7: WireError + Reply::ErrorTyped (a failure crosses with
                         # its taxonomy), and Call::IssueTraced/Reply::ResolvedTraced
 # The dynamically-loadable module format. The host mounts the lazy XSLT module as a generic
 # WasmModuleSpace and services its HostCalls with serve_host_call; the session protocol + the
 # provenance sink live in the crate (the module runs run_session in its own wasm).
-ikigai-module = "0.3.1"  # ★ the floor that COMPILES against ikigai-core 0.1.78+, where
+ikigai-module = "0.3.2"  # the published head (ledger #1101): a failed out-of-band host call is
+                         # recorded as a dependency. 0.3.1 was the floor that COMPILES against ikigai-core 0.1.78+, where
                          # `Resolved` gained a private field and can only be built through
                          # `Resolved::new`. 0.1.10, 0.2.0 and 0.3.0 all build it by struct
                          # literal, so any of them pins this whole host below core 0.1.78 (the
@@ -104,27 +118,34 @@ ikigai-module = "0.3.1"  # ★ the floor that COMPILES against ikigai-core 0.1.7
 # Outbound HTTP-client module (urn:httpGet…). Already async + executor-agnostic
 # (HttpTransport seam), so the browser supplies a `fetch`-backed transport — same
 # module the native CLI drives with ureq. Unchanged for M2, so straight from crates.io.
-ikigai-http = "0.1.1"
+ikigai-http = "0.1.9"  # the published head (ledger #1101): the host-deny regression pinned
+                       # (ledger #874), core floor 0.1.86
 # Interactive runbook module (urn:runbook:*) — same module the CLI links; local path
 # during dev, publish/git when stable (like engine/resolve).
-ikigai-runbook = "0.1.13"  # hide_tab(): the subtractive mirror of add_tab, so a host can
+ikigai-runbook = "0.2.1"  # the published head (ledger #1068, #1101). 0.2.0 names the space
+                           # urn:iki:space:runbook (ledger #987); 0.2.1 refuses an `as` outside
+                           # PAGE_FACES (text/html, text/plain, application/json) with
+                           # InvalidArgument (ledger #210). This host asks only for text/html.
+                           # tests/k_adapter.rs indexes the zerotrust steps by POSITION and
+                           # still finds ten, in the same order.
+                           # (0.1.13 gave hide_tab(): the subtractive mirror of add_tab, so a host can
                            # withdraw a built-in tab it cannot serve. This kernel does not
                            # link ikigai-lisp (Steel does not go to wasm), so its Lisp tab
                            # answered "no endpoint resolved for urn:lisp:eval" on every
                            # step. (0.1.10 gave the older need: the Basics tab's
-                           # urn:fn:conditional branch (lazy) example.)
-                           # ⚠ 0.1.13 published 2026-09-03, hours before ikigai-fn 0.2.0
-                           # (2026-09-04) renamed the namespace, so its steps still spell
-                           # `urn:fn:*`. They run here only through the alias table above —
-                           # this is the concrete reason the rule outlives the migration.
+                           # urn:fn:conditional branch (lazy) example.))
+                           # ⚠ Its steps still spell `urn:fn:*` (0.1.13 published hours before
+                           # ikigai-fn 0.2.0 renamed the namespace, and 0.2.1 has not moved
+                           # them). They run here only through the alias table above — this
+                           # is the concrete reason the rule outlives the migration.
 # RDF transreption module (urn:rdf:transrept) from the ikigai-linkeddata workspace —
 # parses an RDF syntax and re-serializes to another (or to an HTML table), client-side
 # in wasm. The catalog + FOAF render to HTML through this. (SPARQL deferred to a later
 # slice.) Unpublished during dev — supplied by the [patch.crates-io] below.
-ikigai-rdf = "0.1.2"
+ikigai-rdf = "0.2.1"  # the published head (ledger #1101); 0.2.0 names the space (ledger #987)
 # Content sniffing + sniff-and-dispatch (urn:sniff, urn:transrept:auto) — classify
 # opaque bytes and route them to the right transreptor, client-side.
-ikigai-sniff = "0.1.1"
+ikigai-sniff = "0.2.1"  # the published head (ledger #1101); 0.2.0 names the space (ledger #987)
 # oneshot channel: the browser fetch transport confines the !Send `fetch` to a
 # spawn_local task and bridges the (Send) result back, so `HttpTransport::send` stays
 # Send as the trait requires.
@@ -143,10 +164,13 @@ wtransport = "0.7"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util", "time"] }  # time: the native smoke's bound
 # XSLT linked natively (the server can't lazy-load a wasm module). On wasm the host
 # instead lazy-loads `ikigai-xslt-module` (xrust kept OUT of the host wasm) — Phase 2.
-ikigai-xslt = "0.1.0"
+ikigai-xslt = "0.2.1"  # caller XML bounded, run on a stack sized for the bound (ledger #916);
+                       # pages.yml's XSLT_REV is this release's commit
 # JSON-LD operators linked natively (same reason as XSLT — no wasm lazy-load on the
 # server). On wasm the host lazy-loads the module instead (json-ld kept out of the host).
-ikigai-jsonld = "0.1.1"  # compact sources a context-by-reference
+ikigai-jsonld = "0.2.1"  # JSON-LD nesting bounded at 64, on a sized thread (ledger #1042);
+                         # pages.yml's JSONLD_REV is this release's commit. (0.1.1: compact
+                         # sources a context-by-reference)
 # SHACL validation linked natively (rudof). On wasm the browser serves urn:shacl:validate via
 # this same crate's `module` feature as a lazily-loaded wasm module (built in pages.yml) by
 # default, or — behind `?shacl=js` — the JS shacl-engine (dist/shacl-loader.js).
@@ -157,7 +181,17 @@ ikigai-jsonld = "0.1.1"  # compact sources a context-by-reference
 # `headers_names` are all older); ⚠ `^2.12.1` is also a CEILING (<3.0.0), and ureq 3 is a
 # rewrite with a different API, so that ceiling is deliberate.
 ureq = "2.12.1"
-ikigai-shacl = "0.1.1"  # ★ 0.1.0 IS NOT BUILDABLE, so it was never a true floor. Its
+ikigai-shacl = "0.3.2"  # ★ SECURITY FLOOR (ledger #1101, #1099). rudof evaluates a shape's
+                        # `sh:sparql` with oxigraph's HTTP client compiled in (native only), and
+                        # urn:shacl:validate declares no capability, so below 0.3.2 a SERVICE in
+                        # a shapes graph, or smuggled in through a data IRI rudof splices into
+                        # VALUES, made THIS server connect out with no urn:cap:net:* at all.
+                        # 0.3.2 refuses every such query before rudof sees it.
+                        # tests/native_smoke.rs probes it through the real server binary
+                        # against a loopback stub: zero connections, a typed refusal. Note
+                        # `^0.3.2` is also a CEILING (<0.4.0). pages.yml's SHACL_REV is this
+                        # release's commit, for the browser's module wasm.
+                        # (History: 0.1.0 IS NOT BUILDABLE, so it was never a true floor. Its
                         # `shacl = "0.3"` caret admits rudof 0.3.17+, and 0.3.17 added a third
                         # argument (`&ShaclConfig`) to `validate()` — a SOURCE break shipped in
                         # a PATCH release. Measured 2026-09-06 by resolving this crate from
@@ -174,7 +208,7 @@ ikigai-shacl = "0.1.1"  # ★ 0.1.0 IS NOT BUILDABLE, so it was never a true flo
                         # so the window closed on its own the moment 0.1.1 published. What is
                         # left is the false floor, and the committed lock still pinning a
                         # version that cannot build in a current graph — which matters because
-                        # this repo DEPLOYS to Pages off that lock.
+                        # this repo DEPLOYS to Pages off that lock.)
 
 # wasm-only: the cross-tab `storage` event, used to cut golden threads when another
 # tab (or page JS) changes a workspace file — the browser's filesystem watcher.
@@ -182,7 +216,10 @@ ikigai-shacl = "0.1.1"  # ★ 0.1.0 IS NOT BUILDABLE, so it was never a true flo
 # The time transport — only the browser drives it here (the native server doesn't
 # need timed jobs). Its native ThreadTimer is cfg'd out on wasm; this lib supplies a
 # `setInterval`-backed TimerBackend instead.
-ikigai-time = "0.2.0"  # the wasm fix: a completed job is stamped from the kernel's
+ikigai-time = "0.4.1"  # the published head (ledger #1101). Source-breaking at 0.4: a job
+                       # fires under the capability it is scheduled with, clamped to the
+                       # registry's ceiling, never root (ledger #79), so `schedule_persistent`
+                       # takes one; the nav clock's job passes no scopes. 0.2.0 was the wasm fix: a completed job is stamped from the kernel's
                        # injected Clock, not `std::time::Instant::now()` — which compiles on
                        # wasm32 and PANICS at runtime, and did so while holding the registry
                        # lock, so every later `urn:time:*` read died `cannot recursively
@@ -197,11 +234,10 @@ web-sys = { version = "0.3", features = [
 
 [dev-dependencies]
 # The module recipe as one test (tests/conformance.rs): walks every endpoint this host
-# binds, natively, over the same kernel the page composes. 0.1.0 is the published
-# contract; 0.1.1 is unpublished and not chased. Pulls ikigai-core 0.1.67 and ikigai-vocab
-# 0.1.66+ (0.1.68 resolved) into the lock, its own floors; the pinned crates above compile
-# against them.
-ikigai-conformance = "0.2.0"
+# binds, natively, over the same kernel the page composes. The suite is the published
+# contract at its published head (ledger #1101): 0.2.0 was ceilinged below 0.3 (AUTHORITY),
+# 0.5 (purity), 0.6 (SPACE-NAME) and 0.6.1 (an Expiry::At deadline is a bound).
+ikigai-conformance = "0.6.1"
 # A scratch jail for the file module: the walk FIRES Sink/Delete, and the native
 # backend is std::fs, so the fixture must never be this repo's tree.
 tempfile = "3"
