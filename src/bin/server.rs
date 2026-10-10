@@ -12,10 +12,21 @@
 //! to the page.
 //!
 //! ```text
-//! ikigai-net-server [PORT] [--root DIR]
+//! ikigai-net-server [PORT] [--root DIR] [--bind ADDR] [--allow-origin ORIGIN]…
 //! ```
 //!
-//! `PORT` defaults to 4433. `--root` names the file module's jail (`urn:file:*`); without
+//! `PORT` defaults to 4433. The server binds **loopback** (`127.0.0.1`) unless `--bind`
+//! names another address, and says so at start: it authenticates no client and resolves
+//! every call as root, so a wider bind hands root over the file jail to anyone who can
+//! reach the port with a QUIC client (ledger #1089). It used to bind every interface.
+//! A browser session must also come from an allowed `Origin` (`--allow-origin`, repeatable,
+//! `*` for any; by default the origins the bundled pages are served from, listed in
+//! [`DEFAULT_ORIGINS`]); one from any other origin is refused with 403 at the handshake.
+//! That is defense in depth against a page on another site, not authentication: a
+//! non-browser client writes whatever `Origin` it likes, or none, and a session with no
+//! `Origin` is admitted for that reason.
+//!
+//! The file jail: `--root` names the file module's jail (`urn:file:*`); without
 //! it the jail is `<data home>/web-demo/ws` (`~/.ikigai/web-demo/ws`). Either way the
 //! server resolves the jail to an ABSOLUTE, canonical path once, at startup, creates it if
 //! it is missing, and prints it. It used to be the relative `ws`, so the files a client
@@ -23,6 +34,7 @@
 //! (ledger #183). A path-ACL scope sent with a capability is spelled against that printed
 //! path (`urn:cap:fs:read:<root>/…`), the spelling `ikigai-fs` documents.
 
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -31,6 +43,7 @@ use ikigai_core::{Capability, Kernel};
 use ikigai_resolve::{Resolver, SpanCollector};
 use ikigai_wire::{decode, encode, Call, Reply, WireError};
 use tokio::io::AsyncReadExt;
+use wtransport::endpoint::endpoint_side::Server;
 use wtransport::endpoint::IncomingSession;
 use wtransport::{Endpoint, Identity, ServerConfig};
 
@@ -50,7 +63,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             std::process::exit(2);
         }
     };
-    let port = args.port;
+    let addr = SocketAddr::new(args.bind, args.port);
+    let origins = Arc::new(OriginPolicy::from_flags(args.origins));
     // The jail, made absolute and canonical ONCE, here: the endpoint opens its root on
     // every request, so a relative root would follow the process's working directory.
     let root = jail_root(
@@ -62,8 +76,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|e| format!("cannot create the file jail {}: {e}", root.display()))?;
     let root = std::fs::canonicalize(&root)?;
 
-    // Self-signed cert valid for localhost; the browser pins its SHA-256.
-    let identity = Identity::self_signed(["localhost", "127.0.0.1", "::1"])?;
+    // Self-signed cert valid for localhost (and a named bind address); the browser pins
+    // its SHA-256.
+    let mut sans = vec!["localhost".to_string(), "127.0.0.1".into(), "::1".into()];
+    if !args.bind.is_unspecified() && !args.bind.is_loopback() {
+        sans.push(args.bind.to_string());
+    }
+    let identity = Identity::self_signed(sans)?;
     let cert_hash = identity.certificate_chain().as_slice()[0].hash();
     let hash_hex: String = cert_hash
         .as_ref()
@@ -71,7 +90,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|b| format!("{b:02x}"))
         .collect();
 
-    println!("ikigai WebTransport server  →  https://127.0.0.1:{port}");
+    println!("ikigai WebTransport server  →  https://{addr}");
+    if args.bind.is_loopback() {
+        println!("bound to {addr} (loopback only; --bind ADDR to widen)");
+    } else {
+        println!(
+            "⚠ bound to {addr}, BEYOND LOOPBACK: this server authenticates no client and \
+             resolves every call as root, so anyone who reaches this address with a QUIC \
+             client can read and write its file jail"
+        );
+    }
+    println!("allowed origins: {origins}");
     println!("cert sha-256: {hash_hex}");
     println!("open the network demo page with  #cert={hash_hex}  in the URL");
     println!("file jail (urn:file:*): {}", root.display());
@@ -81,40 +110,114 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         root,
     ));
 
+    let server = endpoint(addr, identity)?;
+    accept_loop(server, kernel, origins).await;
+    Ok(())
+}
+
+/// The server endpoint, bound to exactly `addr` — never the any-address default.
+fn endpoint(addr: SocketAddr, identity: Identity) -> std::io::Result<Endpoint<Server>> {
     let config = ServerConfig::builder()
-        .with_bind_default(port)
+        .with_bind_address(addr)
         .with_identity(identity)
         .keep_alive_interval(Some(Duration::from_secs(3)))
         .build();
-    let server = Endpoint::server(config)?;
+    Endpoint::server(config)
+}
 
+/// Accept sessions forever, each on its own task.
+async fn accept_loop(server: Endpoint<Server>, kernel: Arc<Kernel>, origins: Arc<OriginPolicy>) {
     loop {
         let incoming = server.accept().await;
         let kernel = Arc::clone(&kernel);
+        let origins = Arc::clone(&origins);
         tokio::spawn(async move {
-            if let Err(e) = serve(incoming, kernel).await {
+            if let Err(e) = serve(incoming, kernel, &origins).await {
                 eprintln!("session ended: {e}");
             }
         });
     }
 }
 
-const USAGE: &str = "usage: ikigai-net-server [PORT] [--root DIR]\n  \
-    PORT        UDP port to serve WebTransport on (default 4433)\n  \
-    --root DIR  the file jail for urn:file:* (default <data home>/web-demo/ws, \
-    i.e. ~/.ikigai/web-demo/ws)";
+const USAGE: &str = "usage: ikigai-net-server [PORT] [--root DIR] [--bind ADDR] \
+    [--allow-origin ORIGIN]...\n  \
+    PORT                 UDP port to serve WebTransport on (default 4433)\n  \
+    --root DIR           the file jail for urn:file:* (default <data home>/web-demo/ws, \
+    i.e. ~/.ikigai/web-demo/ws)\n  \
+    --bind ADDR          the IP address to listen on (default 127.0.0.1); anything wider \
+    exposes root to whoever reaches it\n  \
+    --allow-origin O     a browser origin allowed to open a session (repeatable; `*` for \
+    any; default http://127.0.0.1:8087, http://localhost:8087, https://ikigai-rs.github.io)";
+
+/// The origins the bundled pages are served from: `dist/` served locally as the README
+/// and DEMO say (`python3 -m http.server 8087`), and GitHub Pages, which publishes all of
+/// `dist/` including `net.html`.
+const DEFAULT_ORIGINS: &[&str] = &[
+    "http://127.0.0.1:8087",
+    "http://localhost:8087",
+    "https://ikigai-rs.github.io",
+];
+
+/// Which browser origins may open a session.
+#[derive(Debug, PartialEq)]
+enum OriginPolicy {
+    Any,
+    Only(Vec<String>),
+}
+
+impl OriginPolicy {
+    /// `--allow-origin` values REPLACE the defaults; any `*` admits every origin.
+    fn from_flags(flags: Vec<String>) -> Self {
+        if flags.iter().any(|o| o.trim() == "*") {
+            OriginPolicy::Any
+        } else if flags.is_empty() {
+            OriginPolicy::Only(DEFAULT_ORIGINS.iter().map(|o| normalize(o)).collect())
+        } else {
+            OriginPolicy::Only(flags.iter().map(|o| normalize(o)).collect())
+        }
+    }
+
+    /// Whether a session whose request carries `origin` may proceed. No `Origin` at all
+    /// is admitted: browsers always send one for WebTransport, so its absence means a
+    /// non-browser client, which could as easily have sent an allowed value.
+    fn allows(&self, origin: Option<&str>) -> bool {
+        match (self, origin) {
+            (OriginPolicy::Any, _) | (_, None) => true,
+            (OriginPolicy::Only(list), Some(origin)) => list.contains(&normalize(origin)),
+        }
+    }
+}
+
+impl std::fmt::Display for OriginPolicy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OriginPolicy::Any => f.write_str("* (any)"),
+            OriginPolicy::Only(list) => f.write_str(&list.join(", ")),
+        }
+    }
+}
+
+/// An origin as compared: scheme and host are case-insensitive, and a trailing `/`
+/// (which an `Origin` header never carries, but an operator might type) is dropped.
+fn normalize(origin: &str) -> String {
+    origin.trim().trim_end_matches('/').to_ascii_lowercase()
+}
 
 /// The command line, parsed. `Ok(None)` is a request for the usage text.
 #[derive(Debug, PartialEq)]
 struct Args {
     port: u16,
     root: Option<PathBuf>,
+    bind: IpAddr,
+    origins: Vec<String>,
 }
 
 impl Args {
     fn parse(args: impl IntoIterator<Item = String>) -> Result<Option<Args>, String> {
         let mut port = None;
         let mut root = None;
+        let mut bind = None;
+        let mut origins = Vec::new();
         let mut args = args.into_iter();
         while let Some(arg) = args.next() {
             if arg == "-h" || arg == "--help" {
@@ -124,6 +227,24 @@ impl Args {
                 root = Some(PathBuf::from(dir));
             } else if let Some(dir) = arg.strip_prefix("--root=") {
                 root = Some(PathBuf::from(dir));
+            } else if arg == "--bind" || arg.starts_with("--bind=") {
+                let addr = match arg.strip_prefix("--bind=") {
+                    Some(addr) => addr.to_string(),
+                    None => args.next().ok_or("--bind needs an IP address")?,
+                };
+                bind = Some(
+                    addr.parse()
+                        .map_err(|_| format!("`{addr}` is not an IP address"))?,
+                );
+            } else if arg == "--allow-origin" || arg.starts_with("--allow-origin=") {
+                let origin = match arg.strip_prefix("--allow-origin=") {
+                    Some(origin) => origin.to_string(),
+                    None => args.next().ok_or("--allow-origin needs an origin")?,
+                };
+                if origin.trim().is_empty() {
+                    return Err("--allow-origin needs an origin".into());
+                }
+                origins.push(origin);
             } else if arg.starts_with('-') {
                 return Err(format!("unknown option `{arg}`"));
             } else if port.is_none() {
@@ -143,6 +264,8 @@ impl Args {
         Ok(Some(Args {
             port: port.unwrap_or(4433),
             root,
+            bind: bind.unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+            origins,
         }))
     }
 }
@@ -166,12 +289,23 @@ fn jail_root(
 }
 
 /// Accept one WebTransport session and answer `Call`s on its bidi streams until
-/// the client disconnects.
+/// the client disconnects. A session from an origin the policy does not allow is
+/// refused with 403 before any `Call` is read.
 async fn serve(
     incoming: IncomingSession,
     kernel: Arc<Kernel>,
+    origins: &OriginPolicy,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let connection = incoming.await?.accept().await?;
+    let request = incoming.await?;
+    if !origins.allows(request.origin()) {
+        eprintln!(
+            "refused a session from origin {:?} (allowed: {origins})",
+            request.origin().unwrap_or_default()
+        );
+        request.forbidden().await;
+        return Ok(());
+    }
+    let connection = request.accept().await?;
     loop {
         let (mut send, recv) = match connection.accept_bi().await {
             Ok(stream) => stream,
@@ -270,26 +404,45 @@ mod tests {
 
     #[test]
     fn the_command_line_takes_a_port_and_a_root() {
+        let loopback = IpAddr::V4(Ipv4Addr::LOCALHOST);
         assert_eq!(
             parse(&[]).unwrap(),
             Some(Args {
                 port: 4433,
-                root: None
+                root: None,
+                bind: loopback,
+                origins: vec![],
             })
         );
         assert_eq!(
             parse(&["47433", "--root", "/srv/ws"]).unwrap(),
             Some(Args {
                 port: 47433,
-                root: Some("/srv/ws".into())
+                root: Some("/srv/ws".into()),
+                bind: loopback,
+                origins: vec![],
             })
         );
         assert_eq!(
-            parse(&["--root=/srv/ws"]).unwrap(),
+            parse(&[
+                "--root=/srv/ws",
+                "--bind",
+                "0.0.0.0",
+                "--allow-origin",
+                "https://a.example",
+                "--allow-origin=http://b.example:8080",
+            ])
+            .unwrap(),
             Some(Args {
                 port: 4433,
-                root: Some("/srv/ws".into())
+                root: Some("/srv/ws".into()),
+                bind: "0.0.0.0".parse().unwrap(),
+                origins: vec!["https://a.example".into(), "http://b.example:8080".into()],
             })
+        );
+        assert_eq!(
+            parse(&["--bind=::1"]).unwrap().unwrap().bind,
+            "::1".parse::<IpAddr>().unwrap()
         );
         assert_eq!(parse(&["--help"]).unwrap(), None);
         for bad in [
@@ -298,8 +451,106 @@ mod tests {
             &["--root="],
             &["--jail", "x"],
             &["1", "2"],
+            &["--bind"],
+            &["--bind", "localhost:1"],
+            &["--allow-origin"],
+            &["--allow-origin="],
         ] {
             assert!(parse(bad).is_err(), "{bad:?} should be refused");
         }
+    }
+}
+
+#[cfg(test)]
+mod edge {
+    //! The network edge, end to end over a real WebTransport handshake on loopback.
+
+    use super::*;
+    use wtransport::endpoint::ConnectOptions;
+    use wtransport::error::ConnectingError;
+    use wtransport::ClientConfig;
+
+    #[test]
+    fn the_default_bind_is_loopback() {
+        let args = Args::parse(Vec::<String>::new()).unwrap().unwrap();
+        assert!(args.bind.is_loopback(), "{}", args.bind);
+    }
+
+    #[test]
+    fn the_default_origins_are_the_bundled_pages_and_a_flag_replaces_them() {
+        let default = OriginPolicy::from_flags(vec![]);
+        for ok in DEFAULT_ORIGINS {
+            assert!(default.allows(Some(ok)), "{ok}");
+        }
+        assert!(default.allows(Some("HTTP://LocalHost:8087/")));
+        for no in [
+            "https://evil.example",
+            "http://127.0.0.1:8088",
+            "https://ikigai-rs.github.io.evil.example",
+            "null",
+        ] {
+            assert!(!default.allows(Some(no)), "{no}");
+        }
+        assert!(default.allows(None), "a non-browser client sends no Origin");
+        let only = OriginPolicy::from_flags(vec!["https://a.example".into()]);
+        assert!(only.allows(Some("https://a.example")));
+        assert!(!only.allows(Some("http://127.0.0.1:8087")));
+        assert_eq!(
+            OriginPolicy::from_flags(vec!["https://a.example".into(), "*".into()]),
+            OriginPolicy::Any
+        );
+    }
+
+    /// Start a server on an ephemeral loopback port, and connect to it with `origin`.
+    async fn connect_with(origin: Option<&str>) -> Result<(), ConnectingError> {
+        let jail = tempfile::tempdir().expect("tempdir");
+        let kernel = Arc::new(ikigai_web_demo::build_kernel_in(
+            "Remote (test)",
+            jail.path().to_path_buf(),
+        ));
+        let identity = Identity::self_signed(["localhost", "127.0.0.1"]).expect("identity");
+        let hash = identity.certificate_chain().as_slice()[0].hash();
+        let args = Args::parse(vec!["0".to_string()]).unwrap().unwrap();
+        let server = endpoint(SocketAddr::new(args.bind, 0), identity).expect("bind");
+        let addr = server.local_addr().expect("addr");
+        assert!(addr.ip().is_loopback(), "{addr}");
+        let task = tokio::spawn(accept_loop(
+            server,
+            kernel,
+            Arc::new(OriginPolicy::from_flags(vec![])),
+        ));
+
+        let client = Endpoint::client(
+            ClientConfig::builder()
+                .with_bind_default()
+                .with_server_certificate_hashes([hash])
+                .build(),
+        )
+        .expect("client");
+        let mut options = ConnectOptions::builder(format!("https://{addr}/"));
+        if let Some(origin) = origin {
+            options = options.add_header("origin", origin);
+        }
+        let result = client.connect(options.build()).await.map(|_| ());
+        task.abort();
+        result
+    }
+
+    #[tokio::test]
+    async fn a_disallowed_origin_is_refused_at_the_handshake() {
+        assert!(matches!(
+            connect_with(Some("https://evil.example")).await,
+            Err(ConnectingError::SessionRejected)
+        ));
+    }
+
+    #[tokio::test]
+    async fn an_allowed_origin_and_no_origin_are_admitted() {
+        connect_with(Some("http://127.0.0.1:8087"))
+            .await
+            .expect("an allowed origin connects");
+        connect_with(None)
+            .await
+            .expect("a client without an Origin connects");
     }
 }

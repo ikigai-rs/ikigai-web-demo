@@ -129,9 +129,9 @@ stream, resolved by the remote kernel — so `source urn:iki:fn:toUpper hi` twic
 
 ```bash
 # build the WASM glue first (steps 1–2 above), then:
-cargo run --bin ikigai-net-server     # serves on https://127.0.0.1:4433, prints a cert hash
-                                      # and its file jail (default ~/.ikigai/web-demo/ws;
-                                      # `-- 4433 --root /abs/dir` to choose one)
+cargo run --bin ikigai-net-server     # serves on https://127.0.0.1:4433 (loopback only),
+                                      # prints a cert hash and its file jail (default
+                                      # ~/.ikigai/web-demo/ws; `-- 4433 --root /abs/dir`)
 cd dist && python3 -m http.server 8087
 # open http://127.0.0.1:8087/net.html — paste the printed cert hash (or use #cert=<hash>)
 ```
@@ -141,6 +141,15 @@ WebTransport's `serverCertificateHashes` (no CA), so paste the current hash.
 `urn:file:*` on the server is jailed to an absolute directory, resolved once at startup
 and printed: `--root DIR`, or `<data home>/web-demo/ws` (`~/.ikigai/web-demo/ws`) by
 default, created if missing. It no longer depends on where the server was launched.
+
+The server authenticates no client and resolves every call as **root**, so it binds
+**loopback only** (`127.0.0.1`) by default. `--bind ADDR` widens it, and the server says
+so at start: anyone who reaches that address with a QUIC client can read and write the
+jail. A browser session must also come from an allowed `Origin`, by default the pages'
+own (`http://127.0.0.1:8087`, `http://localhost:8087`, `https://ikigai-rs.github.io`);
+`--allow-origin ORIGIN` (repeatable, `*` for any) replaces that list. A session from any
+other origin is refused with 403 at the handshake. That stops a page on another site, not
+a non-browser client, which can send any `Origin` or none.
 Needs Chrome/Edge (or recent Firefox). It isn't on GitHub Pages — Pages is
 static-only, and this needs a running server — so it's run-it-yourself.
 
