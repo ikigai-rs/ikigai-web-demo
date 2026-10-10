@@ -46,9 +46,9 @@
 //! - `pure` on the constants other crates serve here (`ikigai-vocab`, the runbook's
 //!   `ik-context`, `alignment` and `data-*`): a suite declaration about behavior over THIS
 //!   kernel, not a fix to those crates.
-//! - `opt_out` of `httpGet` Source and `httpHead` Exists: the fetch transport this host
-//!   installs is the browser's, and its native stub reaches no origin, so the cache probe
-//!   cannot resolve them. The opt-out also drops ENFORCED (PENDING #21);
+//! - `opt_out` of `httpGet` Source and `httpHead` Exists: `build_kernel_in` installs the
+//!   browser's `fetch` in the page and NO transport on native (only the server opts in to
+//!   the network, `tests/native_fetch.rs`), so the cache probe cannot resolve them. The opt-out also drops ENFORCED (PENDING #21);
 //!   [`the_http_facades_are_denied_before_the_transport`] pins it by hand.
 //!
 //! ## What the suite cannot hold and this file pins by hand
@@ -278,13 +278,13 @@ fn suite(kernel: &Kernel) -> Suite {
         .opt_out(
             "httpGet",
             Some(Verb::Source),
-            "the fetch transport this host installs is the browser's; its native stub \
-             reaches no origin. Denial under no grants pinned by hand",
+            "build_kernel_in installs no network transport on native (only the server \
+             opts in); denial under no grants pinned by hand",
         )
         .opt_out(
             "httpHead",
             Some(Verb::Exists),
-            "same: the browser fetch transport has no native path",
+            "same: no network transport on a native build_kernel_in kernel",
         )
         .pure("greeter")
         .cacheable("greeter")
@@ -535,8 +535,9 @@ fn catalog_rdf_declares_the_scope_it_reaches() {
 }
 
 /// The opted-out actions, by hand: every HTTP facade is `Denied` under no grants — the
-/// kernel's floor on the declared `urn:cap:net:*` — before the (native-stub) transport is
-/// reached; and under a grant it IS reached, which is the native stub's error, not a denial.
+/// kernel's floor on the declared `urn:cap:net:*` — before the transport is reached; and
+/// under a grant it IS reached, which on a native `build_kernel_in` kernel is the missing
+/// transport's refusal, not a denial (and never a real host).
 #[test]
 fn the_http_facades_are_denied_before_the_transport() {
     let jail = jail();
@@ -561,8 +562,8 @@ fn the_http_facades_are_denied_before_the_transport() {
         &Capability::root(),
     ) {
         Err(Error::Denied(e)) => panic!("root reaches the transport, got denied: {e}"),
-        Err(e) => assert!(e.to_string().contains("wasm-only"), "{e}"),
-        Ok(_) => panic!("the native stub cannot fetch"),
+        Err(e) => assert!(e.to_string().contains("no network transport"), "{e}"),
+        Ok(_) => panic!("a build_kernel_in kernel has no network transport"),
     }
 }
 

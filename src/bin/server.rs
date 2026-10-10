@@ -17,8 +17,9 @@
 //!
 //! `PORT` defaults to 4433. The server binds **loopback** (`127.0.0.1`) unless `--bind`
 //! names another address, and says so at start: it authenticates no client and resolves
-//! every call as root, so a wider bind hands root over the file jail to anyone who can
-//! reach the port with a QUIC client (ledger #1089). It used to bind every interface.
+//! every call as root, so a wider bind hands root over the file jail, and over the server's
+//! outbound fetch, to anyone who can reach the port with a QUIC client (ledger #1089). It
+//! used to bind every interface.
 //! A browser session must also come from an allowed `Origin` (`--allow-origin`, repeatable,
 //! `*` for any; by default the origins the bundled pages are served from, listed in
 //! [`DEFAULT_ORIGINS`]); one from any other origin is refused with 403 at the handshake.
@@ -97,7 +98,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!(
             "⚠ bound to {addr}, BEYOND LOOPBACK: this server authenticates no client and \
              resolves every call as root, so anyone who reaches this address with a QUIC \
-             client can read and write its file jail"
+             client can read and write its file jail and make it fetch any URL"
         );
     }
     println!("allowed origins: {origins}");
@@ -105,12 +106,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("open the network demo page with  #cert={hash_hex}  in the URL");
     println!("file jail (urn:file:*): {}", root.display());
 
-    let kernel = Arc::new(ikigai_web_demo::build_kernel_in(
+    // The one host here that reaches the network: a granted `urn:http*` fetches through
+    // a native transport that returns a redirect rather than following it, so the HTTP
+    // endpoint re-runs the `urn:cap:net:*` ACL on every hop (ledger #184). Without it every
+    // fetch answered "browser fetch is wasm-only".
+    let kernel = Arc::new(ikigai_web_demo::build_kernel_with_transport(
         "Remote (WebTransport)",
         root,
+        Arc::new(ikigai_web_demo::NativeFetchTransport::default()),
     ));
 
     let server = endpoint(addr, identity)?;
+    // Printed only once the socket is bound, so a supervisor (or the native smoke,
+    // tests/native_smoke.rs) can wait for it instead of guessing; the address is the
+    // BOUND one, which differs from `addr` when PORT is 0.
+    println!("listening on https://{}", server.local_addr()?);
     accept_loop(server, kernel, origins).await;
     Ok(())
 }
@@ -145,7 +155,7 @@ const USAGE: &str = "usage: ikigai-net-server [PORT] [--root DIR] [--bind ADDR] 
     --root DIR           the file jail for urn:file:* (default <data home>/web-demo/ws, \
     i.e. ~/.ikigai/web-demo/ws)\n  \
     --bind ADDR          the IP address to listen on (default 127.0.0.1); anything wider \
-    exposes root to whoever reaches it\n  \
+    exposes root (the file jail, outbound fetch) to whoever reaches it\n  \
     --allow-origin O     a browser origin allowed to open a session (repeatable; `*` for \
     any; default http://127.0.0.1:8087, http://localhost:8087, https://ikigai-rs.github.io)";
 

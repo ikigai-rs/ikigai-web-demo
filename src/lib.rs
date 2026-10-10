@@ -23,6 +23,11 @@ use ikigai_vocab::TurtleRenderer;
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 
+#[cfg(not(target_family = "wasm"))]
+mod native_fetch;
+#[cfg(not(target_family = "wasm"))]
+pub use native_fetch::{NativeFetchTransport, MAX_BODY};
+
 /// An XSD datatype IRI for a scalar input's `class` — the manifold's answer to "what
 /// shape is this argument", which `urn:kernel:validate` checks before a call and the
 /// conformance walk holds every input to.
@@ -1155,7 +1160,24 @@ pub fn build_kernel(nature: &'static str) -> Kernel {
 /// whatever root is given (`ikigai-fs` places scopes against the root's spelling), so an
 /// absolute root takes `urn:cap:fs:read:<root>/…`, not the page's `ws/…`. Everything else
 /// is identical: same spaces, same renderer, same alias table.
+///
+/// The HTTP module's transport is the target's default: `fetch` in the page, and on
+/// native NONE — every granted `urn:http*` is an `Unavailable` naming the missing
+/// transport, so a test that walks this kernel never reaches a real host. A native host
+/// that should fetch says so with [`build_kernel_with_transport`].
 pub fn build_kernel_in(nature: &'static str, file_root: impl Into<std::path::PathBuf>) -> Kernel {
+    build_kernel_with_transport(nature, file_root, default_transport())
+}
+
+/// [`build_kernel_in`] with the HTTP module's transport chosen by the caller. The
+/// WebTransport server passes a [`NativeFetchTransport`], which returns a redirect rather
+/// than following it, as [`ikigai_http::HttpTransport`]'s contract requires: the endpoint
+/// follows, re-running the `urn:cap:net:*` ACL against every hop (ledger #184).
+pub fn build_kernel_with_transport(
+    nature: &'static str,
+    file_root: impl Into<std::path::PathBuf>,
+    transport: Arc<dyn ikigai_http::HttpTransport>,
+) -> Kernel {
     // Register the browser-only Identity tab so the shared runbook strip lists it
     // (idempotent). Its panel is `urn:runbook:identity`, bound below.
     ikigai_runbook::add_tab("identity", "Identity");
@@ -1269,15 +1291,15 @@ pub fn build_kernel_in(nature: &'static str, file_root: impl Into<std::path::Pat
             // golden thread, the same as the native CLI.
             ikigai_fs::FileEndpoint::new(file_root).cacheable(),
         );
-    // The root is a Fallback over the local space, then the HTTP module on a
-    // `fetch`-backed transport — so `urn:httpGet url=…` resolves against the live web
-    // from inside the tab, the same resource model the native CLI drives with ureq.
+    // The root is a Fallback over the local space, then the HTTP module on the caller's
+    // transport — `fetch` in the page, so `urn:httpGet url=…` resolves against the live
+    // web from inside the tab, the same resource model the native CLI drives with ureq.
     // A `Date`-backed clock lets the kernel honour `Cache-Control: max-age` (and feeds
     // `urn:kernel:constraint` timing), exactly as `SystemClock` does natively.
     #[allow(unused_mut)]
     let mut spaces: Vec<Arc<dyn Space>> = vec![
         Arc::new(space) as Arc<dyn Space>,
-        Arc::new(ikigai_http::space(Arc::new(BrowserFetchTransport))) as Arc<dyn Space>,
+        Arc::new(ikigai_http::space(transport)) as Arc<dyn Space>,
         // RDF transreption (`urn:rdf:transrept`) — parses RDF and re-serializes to another
         // syntax (or an HTML table), client-side. The Catalog page and the Linked Data tab
         // pipe `urn:kernel:catalog` / a live FOAF fetch through it.
@@ -1464,15 +1486,51 @@ fn host_clock() -> Arc<dyn Clock> {
     Arc::new(ikigai_core::SystemClock)
 }
 
+/// The HTTP transport [`build_kernel_in`] installs: the page's `fetch`.
+#[cfg(target_family = "wasm")]
+fn default_transport() -> Arc<dyn ikigai_http::HttpTransport> {
+    Arc::new(BrowserFetchTransport)
+}
+
+/// The HTTP transport [`build_kernel_in`] installs on native: none. Opting in to the
+/// network is the host's decision ([`build_kernel_with_transport`]), so a kernel built for
+/// a test cannot reach a real host by default.
+#[cfg(not(target_family = "wasm"))]
+fn default_transport() -> Arc<dyn ikigai_http::HttpTransport> {
+    Arc::new(NoTransport)
+}
+
+/// A native kernel without a network: every request is refused as a transport failure
+/// (`Unavailable` at the endpoint), after the capability ACL has already passed it.
+#[cfg(not(target_family = "wasm"))]
+struct NoTransport;
+
+#[cfg(not(target_family = "wasm"))]
+#[async_trait]
+impl ikigai_http::HttpTransport for NoTransport {
+    async fn send(
+        &self,
+        request: ikigai_http::HttpRequest,
+    ) -> std::result::Result<ikigai_http::HttpResponse, String> {
+        Err(format!(
+            "no network transport in this kernel, so `{}` was not fetched \
+             (the WebTransport server installs one; build_kernel_in does not)",
+            request.url
+        ))
+    }
+}
+
 /// The browser's [`HttpTransport`](ikigai_http::HttpTransport): performs requests with
 /// the Fetch API. `fetch` is `!Send` (it touches `JsValue`), but the trait requires a
 /// `Send` future — so `send` confines the fetch to a `spawn_local` task and bridges the
 /// (`Send`) result back through a oneshot channel, keeping `send`'s own future `Send`.
+/// Wasm only: `spawn_local` is a wasm-bindgen import and PANICS when called natively.
+#[cfg(target_family = "wasm")]
 struct BrowserFetchTransport;
 
+#[cfg(target_family = "wasm")]
 #[async_trait]
 impl ikigai_http::HttpTransport for BrowserFetchTransport {
-    #[cfg(target_family = "wasm")]
     async fn send(
         &self,
         request: ikigai_http::HttpRequest,
@@ -1482,17 +1540,6 @@ impl ikigai_http::HttpTransport for BrowserFetchTransport {
             let _ = tx.send(browser_fetch(request).await);
         });
         rx.await.map_err(|_| "fetch task was dropped".to_string())?
-    }
-
-    // Off wasm the stub answers directly: `spawn_local` is a wasm-bindgen import and
-    // PANICS when called natively, so before this the native server's first granted
-    // `urn:httpGet` took its task down instead of returning the stub's error.
-    #[cfg(not(target_family = "wasm"))]
-    async fn send(
-        &self,
-        request: ikigai_http::HttpRequest,
-    ) -> std::result::Result<ikigai_http::HttpResponse, String> {
-        browser_fetch(request).await
     }
 }
 
@@ -1556,15 +1603,6 @@ async fn browser_fetch(
         headers,
         body,
     })
-}
-
-/// Non-wasm stub so the crate's lib still type-checks for the native server target
-/// (the browser transport is never used there).
-#[cfg(not(target_family = "wasm"))]
-async fn browser_fetch(
-    _request: ikigai_http::HttpRequest,
-) -> std::result::Result<ikigai_http::HttpResponse, String> {
-    Err("browser fetch is wasm-only".to_string())
 }
 
 // Closures backing live `setInterval`/`setTimeout` timers, kept alive while their
