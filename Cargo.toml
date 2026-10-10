@@ -181,16 +181,28 @@ ikigai-jsonld = "0.2.1"  # JSON-LD nesting bounded at 64, on a sized thread (led
 # `headers_names` are all older); ⚠ `^2.12.1` is also a CEILING (<3.0.0), and ureq 3 is a
 # rewrite with a different API, so that ceiling is deliberate.
 ureq = "2.12.1"
-ikigai-shacl = "0.3.2"  # ★ SECURITY FLOOR (ledger #1101, #1099). rudof evaluates a shape's
+ikigai-shacl = "0.3.3"  # ★ SECURITY FLOOR (ledger #1121, #1101, #1099). rudof evaluates a shape's
                         # `sh:sparql` with oxigraph's HTTP client compiled in (native only), and
                         # urn:shacl:validate declares no capability, so below 0.3.2 a SERVICE in
                         # a shapes graph, or smuggled in through a data IRI rudof splices into
                         # VALUES, made THIS server connect out with no urn:cap:net:* at all.
                         # 0.3.2 refuses every such query before rudof sees it.
                         # tests/native_smoke.rs probes it through the real server binary
-                        # against a loopback stub: zero connections, a typed refusal. Note
-                        # `^0.3.2` is also a CEILING (<0.4.0). pages.yml's SHACL_REV is this
-                        # release's commit, for the browser's module wasm.
+                        # against a loopback stub: zero connections, a typed refusal.
+                        # 0.3.3 (ledger #1121, #1102): rudof validates a topological level of
+                        # two or more shapes with rayon's `par_iter_mut`, i.e. on rayon's
+                        # global 2 MiB workers rather than the stack urn:shacl:validate sizes
+                        # for the longest query, so through 0.3.2 a flat `||` chain in a
+                        # `sh:select` beside a second targeted shape ABORTED this server
+                        # (SIGABRT, stack overflow on an unnamed rayon thread; measured here
+                        # before the move). 0.3.3 validates on a one-thread pool of the sized
+                        # stack, and refuses a select whose text before WHERE changes byte
+                        # length when uppercased (rudof slices at an offset found in the
+                        # uppercased text). tests/native_smoke.rs sends that deep query through
+                        # the real binary and expects a report. Native only: on wasm rayon
+                        # runs on the current thread. Note `^0.3.3` is also a CEILING
+                        # (<0.4.0). pages.yml's SHACL_REV is this release's commit, for the
+                        # browser's module wasm.
                         # (History: 0.1.0 IS NOT BUILDABLE, so it was never a true floor. Its
                         # `shacl = "0.3"` caret admits rudof 0.3.17+, and 0.3.17 added a third
                         # argument (`&ShaclConfig`) to `validate()` — a SOURCE break shipped in

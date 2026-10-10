@@ -449,3 +449,89 @@ async fn the_native_server_never_lets_a_shapes_graph_reach_the_network() {
         .expect("the native server answered within the bound");
     drop(server);
 }
+
+/// A deep query in a level of two shapes (ledger #1121): rudof validates each topological
+/// level of shapes with rayon's `par_iter_mut`, and a level of two or more is split onto
+/// rayon's global pool, whose workers have the default 2 MiB stack rather than the thread
+/// `urn:shacl:validate` sizes for the longest query. Through ikigai-shacl 0.3.2 a flat `||`
+/// chain in a `sh:select`, beside a second targeted shape, overflowed a rayon worker and
+/// ABORTED this server: the whole process, every connection, from one call that holds no
+/// capability at all. 0.3.3 validates on a one-thread pool of the sized stack, so the same
+/// call comes back a report. (The chain is the size ikigai-shacl's own
+/// `tests/rudof_traps.rs` uses; 3,000 terms already aborted a debug build.)
+#[tokio::test(flavor = "multi_thread")]
+async fn a_deep_query_in_a_two_shape_level_does_not_abort_the_native_server() {
+    let mut server = start();
+    let addr = server.addr;
+    let cert = server.cert.clone();
+    let select = format!(
+        "SELECT $this WHERE {{ FILTER(false{}) }}",
+        "||false".repeat(30_000)
+    );
+    let shapes = format!(
+        "{SHACL_HEAD}ex:S a sh:NodeShape ; sh:targetClass ex:Person ;\n  \
+         sh:sparql [ sh:select \"\"\"{select}\"\"\" ] .\n\
+         ex:T a sh:NodeShape ; sh:targetClass ex:Person ; sh:nodeKind sh:IRI .\n"
+    );
+    let probe = async move {
+        let client = Endpoint::client(
+            ClientConfig::builder()
+                .with_bind_default()
+                .with_server_certificate_hashes([cert])
+                .build(),
+        )
+        .expect("client");
+        let connection = client
+            .connect(format!("https://{addr}/"))
+            .await
+            .expect("a WebTransport session with the server");
+        let call = Call::Issue(request(
+            "urn:shacl:validate",
+            &[("data", SHACL_DATA), ("shapes", shapes.as_str())],
+        ));
+        // Not `call()`: a dead server is the outcome under test, so it is a value here,
+        // reported with the server's exit status below rather than as a stream panic.
+        let (mut send, mut recv) = connection
+            .open_bi()
+            .await
+            .map_err(|e| e.to_string())?
+            .await
+            .map_err(|e| e.to_string())?;
+        send.write_all(&encode(&call).expect("encode the call"))
+            .await
+            .map_err(|e| e.to_string())?;
+        send.finish().await.map_err(|e| e.to_string())?;
+        let mut bytes = Vec::new();
+        recv.read_to_end(&mut bytes)
+            .await
+            .map_err(|e| e.to_string())?;
+        decode::<Reply>(&bytes).map_err(|e| format!("{e} ({} bytes)", bytes.len()))
+    };
+    let outcome = tokio::time::timeout(BOUND, probe)
+        .await
+        .expect("the native server answered within the bound");
+    let reply = outcome.unwrap_or_else(|e| {
+        // Poll for the exit rather than one `try_wait`: a stream that just died races the
+        // process reporting its exit (it reads `None` for a server that is about to say
+        // SIGABRT), and a bare `wait` would hang on a server that is alive.
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        let status = loop {
+            match server.child.try_wait() {
+                Ok(Some(status)) => break format!("it exited {status}"),
+                Ok(None) if std::time::Instant::now() < deadline => {
+                    std::thread::sleep(Duration::from_millis(50))
+                }
+                Ok(None) => break "it is still running".to_string(),
+                Err(e) => break format!("its status is unreadable: {e}"),
+            }
+        };
+        panic!("the server did not answer ({e}); {status}")
+    });
+    let report = text(reply, "a two-shape level with a deep query");
+    assert!(
+        server.child.try_wait().expect("try_wait").is_none(),
+        "the server is still running after the deep query"
+    );
+    assert!(!report.is_empty(), "a validation report: {report:?}");
+    drop(server);
+}

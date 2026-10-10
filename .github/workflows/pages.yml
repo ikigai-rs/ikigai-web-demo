@@ -43,8 +43,11 @@ concurrency:
 #
 # SHACL_REV was first the ikigai-shacl 0.2.0 release commit (shacl PR #12): the first release
 # whose `module` feature builds for wasm32 at all (rudof >= 0.3.22, ledger #206). It is now the
-# 0.3.2 release commit (shacl PR #20), the security floor: caller SPARQL in a shapes graph never
-# reaches the network (ledger #1099, #1101). XSLT_REV and JSONLD_REV moved with it to their 0.2.1
+# 0.3.3 release commit (shacl PR #22), the security floor: caller SPARQL in a shapes graph never
+# reaches the network (0.3.2, ledger #1099, #1101), and a select whose WHERE rudof would misread
+# is refused (0.3.3, ledger #1102). 0.3.3's other fix, validation on a sized pool rather than
+# rayon's global workers, is native-only (on wasm rayon runs on the current thread); the move is
+# for parity with the native lock (ledger #1121). XSLT_REV and JSONLD_REV moved with it to their 0.2.1
 # release commits (the caller-input bounds of ledger #916 and #1042), so each module wasm is the
 # code the native build locks, as above.
 #
@@ -52,7 +55,7 @@ concurrency:
 env:
   XSLT_REV: 1760b370fb13defc72a535130464374ac4de58b6    # ikigai-xslt 0.2.1 (xslt PR #18)
   JSONLD_REV: 452fb1cef110c8941cc9b554e5c3285c37359c09  # ikigai-jsonld 0.2.1 (jsonld PR #11)
-  SHACL_REV: 426cbee017cdeaa760faf268828243d739f3c6dd   # ikigai-shacl 0.3.2 (shacl PR #20)
+  SHACL_REV: c04d838f714f413b5c37e6cad69962482661e9b5   # ikigai-shacl 0.3.3 (shacl PR #22)
 
 jobs:
   build:
