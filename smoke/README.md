@@ -164,6 +164,19 @@ upstream commit reached the public site with no commit here — and are now pinn
 SHAs in the workflow's `env:` block. Pinning makes a module change deliberate; this gate is
 what vets the bump.
 
+## The native server has its own smoke
+
+Everything above runs the page's kernel. The WebTransport server (`ikigai-net-server`) is a
+second host with its own `main`, and two native-only panics (a `js_sys` clock, a
+`spawn_local` fetch) once sat in it unhit because nothing ever asked it for the time or a
+granted fetch (ledger #186). `tests/native_smoke.rs` starts the built binary on loopback,
+connects over WebTransport, and resolves `urn:time:now` twice plus one granted
+`urn:httpGet` against a 127.0.0.1 stub, all under a 60-second bound. It is a `cargo test`,
+so it runs in `ci.yml`, not here: it needs the native toolchain this job does not install,
+and no `dist/`. Replayed against a server whose native clock panics, it fails with the
+server's panic printed and "closed the stream without a reply"; against a server with no
+transport installed, it fails on the fetch.
+
 **Note on cost:** `build` and `smoke` now run on every PR, duplicating work `ci.yml` does
 not do. If that becomes a drag, the tidy-up is to factor `build` + `smoke` into a reusable
 workflow both files call — same coverage, one definition. It was left as the simpler shape

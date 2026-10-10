@@ -208,8 +208,9 @@ fn an_identity_step_outside_the_segment_is_denied_and_never_reaches_the_disk() {
 /// KERNEL's floor (no `urn:cap:fs:write:*` grant at all) — the trace holds exactly one
 /// `denied` event with nothing started, and the file is untouched; the read still resolves;
 /// the jail escape is refused even at full authority; the narrowed net grant refuses the
-/// host outside it. The two network steps reach the transport, which on native is a stub —
-/// an error, not a denial, and the assertion says which.
+/// host outside it. The granted network step reaches the transport, which on a native
+/// `build_kernel_in` kernel is none at all — an error, not a denial, and the assertion says
+/// which. (So the step's real host, httpbin.org, is never contacted from a test.)
 #[test]
 fn the_zerotrust_tab_runs_through_the_adapter_and_the_gated_write_is_refused_before_dispatch() {
     let s = session();
@@ -271,8 +272,8 @@ fn the_zerotrust_tab_runs_through_the_adapter_and_the_gated_write_is_refused_bef
     run(&s.engine, &steps[6]).expect("7 · grant one host");
     let allowed = run(&s.engine, &steps[7]).expect_err("8 reaches the transport");
     assert!(
-        allowed.contains("wasm-only"),
-        "not a denial — the native fetch stub: {allowed}"
+        allowed.contains("no network transport"),
+        "not a denial — the kernel has no transport: {allowed}"
     );
     let elsewhere = run(&s.engine, &steps[8]).expect_err("9 · fetch elsewhere → denied");
     assert!(elsewhere.starts_with("denied:"), "{elsewhere}");

@@ -150,6 +150,10 @@ own (`http://127.0.0.1:8087`, `http://localhost:8087`, `https://ikigai-rs.github
 `--allow-origin ORIGIN` (repeatable, `*` for any) replaces that list. A session from any
 other origin is refused with 403 at the handshake. That stops a page on another site, not
 a non-browser client, which can send any `Origin` or none.
+The server can also **fetch**: `urn:httpGet` and its siblings run on a native `ureq`
+transport that returns a redirect rather than following it, so the HTTP endpoint re-checks
+the `urn:cap:net:*` grant on every hop. A call with no net grant is refused as before; one
+sent as root (the terminal's default) reaches whatever host it names.
 Needs Chrome/Edge (or recent Firefox). It isn't on GitHub Pages — Pages is
 static-only, and this needs a running server — so it's run-it-yourself.
 

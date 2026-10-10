@@ -140,7 +140,7 @@ console_error_panic_hook = "0.1"
 # graph by the cfg, so the wasm build stays lean.
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 wtransport = "0.7"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util", "time"] }  # time: the native smoke's bound
 # XSLT linked natively (the server can't lazy-load a wasm module). On wasm the host
 # instead lazy-loads `ikigai-xslt-module` (xrust kept OUT of the host wasm) — Phase 2.
 ikigai-xslt = "0.1.0"
@@ -150,6 +150,13 @@ ikigai-jsonld = "0.1.1"  # compact sources a context-by-reference
 # SHACL validation linked natively (rudof). On wasm the browser serves urn:shacl:validate via
 # this same crate's `module` feature as a lazily-loaded wasm module (built in pages.yml) by
 # default, or — behind `?shacl=js` — the JS shacl-engine (dist/shacl-loader.js).
+# The native HTTP transport (src/native_fetch.rs) the WebTransport server installs, so a
+# granted `urn:http*` reaches the web natively (ledger #184). Blocking and runtime-free, the
+# client ikigai-cli's transport uses; `redirects(0)` is the HttpTransport contract. 2.12.1 is
+# the version built and tested here (`AgentBuilder::redirects`/`timeout`, `Error::Status`,
+# `headers_names` are all older); ⚠ `^2.12.1` is also a CEILING (<3.0.0), and ureq 3 is a
+# rewrite with a different API, so that ceiling is deliberate.
+ureq = "2.12.1"
 ikigai-shacl = "0.1.1"  # ★ 0.1.0 IS NOT BUILDABLE, so it was never a true floor. Its
                         # `shacl = "0.3"` caret admits rudof 0.3.17+, and 0.3.17 added a third
                         # argument (`&ShaclConfig`) to `validate()` — a SOURCE break shipped in
