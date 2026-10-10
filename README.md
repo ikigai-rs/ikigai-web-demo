@@ -130,12 +130,17 @@ stream, resolved by the remote kernel — so `source urn:iki:fn:toUpper hi` twic
 ```bash
 # build the WASM glue first (steps 1–2 above), then:
 cargo run --bin ikigai-net-server     # serves on https://127.0.0.1:4433, prints a cert hash
+                                      # and its file jail (default ~/.ikigai/web-demo/ws;
+                                      # `-- 4433 --root /abs/dir` to choose one)
 cd dist && python3 -m http.server 8087
 # open http://127.0.0.1:8087/net.html — paste the printed cert hash (or use #cert=<hash>)
 ```
 
 The cert is self-signed and **rotates each run**; the browser trusts it via
 WebTransport's `serverCertificateHashes` (no CA), so paste the current hash.
+`urn:file:*` on the server is jailed to an absolute directory, resolved once at startup
+and printed: `--root DIR`, or `<data home>/web-demo/ws` (`~/.ikigai/web-demo/ws`) by
+default, created if missing. It no longer depends on where the server was launched.
 Needs Chrome/Edge (or recent Firefox). It isn't on GitHub Pages — Pages is
 static-only, and this needs a running server — so it's run-it-yourself.
 

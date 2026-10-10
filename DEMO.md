@@ -355,6 +355,7 @@ wasm-bindgen --target web --out-dir dist \
 
 # run the kernel server (prints a cert hash) + serve the page:
 cargo run --bin ikigai-net-server          # → https://127.0.0.1:4433 + cert sha-256
+                                           #   + file jail ~/.ikigai/web-demo/ws (--root DIR)
 cd dist && python3 -m http.server 8087
 ```
 
