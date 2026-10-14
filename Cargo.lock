@@ -1399,9 +1399,9 @@ dependencies = [
 
 [[package]]
 name = "ikigai-core"
-version = "0.1.93"
+version = "0.1.102"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3687ff94ace80d29d4d73b664fb7b69d5a70a4c5bd5d51e151be08690a45937"
+checksum = "fee0c2ba181f81b5783fab99a13a4b65863cdae9658e59607d4110a2cd019cb9"
 dependencies = [
  "async-trait",
  "blake3",
@@ -1413,9 +1413,9 @@ dependencies = [
 
 [[package]]
 name = "ikigai-engine"
-version = "0.1.44"
+version = "0.1.62"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eea95be29307e91536ef739214a7bfecdd9da7e83d6a6bd4d9db392d69a8322b"
+checksum = "75fcd8c27eb8510ccfea136d18e0b6d042de8ddbf4b9dd3b3f71da2c564a27f6"
 dependencies = [
  "chrono",
  "futures",
@@ -1474,9 +1474,9 @@ dependencies = [
 
 [[package]]
 name = "ikigai-module"
-version = "0.3.2"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9833ce1a2e724c1f13e35ca4743115c76dea2221340911bccd4c3f138b71e2a8"
+checksum = "ba33ad8592c37c8c835ed07f9ccc0976505ff9005e27bbf4b1076bdbf645c481"
 dependencies = [
  "async-trait",
  "futures",
@@ -1489,9 +1489,9 @@ dependencies = [
 
 [[package]]
 name = "ikigai-rdf"
-version = "0.2.1"
+version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "691a2e7d51818c6f3807caf98251e796b91788d39aa6b0a4a65cae679536d6e9"
+checksum = "93f12156d83561df1889979ff8ba018cf5da0c7fe5b8d611084f1a48f478fd2b"
 dependencies = [
  "async-trait",
  "getrandom 0.3.4",
@@ -1503,9 +1503,9 @@ dependencies = [
 
 [[package]]
 name = "ikigai-resolve"
-version = "0.1.44"
+version = "0.1.62"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e7b5c0ded3b3710f2d0b225c09b2f23705e34bdae69c562de86337550458efe"
+checksum = "7c9655d6c243c88dcb7594cf5b6562669018971fb6b732ea1947988a79ba9e56"
 dependencies = [
  "async-trait",
  "futures",
@@ -1557,9 +1557,9 @@ dependencies = [
 
 [[package]]
 name = "ikigai-store"
-version = "0.2.11"
+version = "0.2.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc1fec3c06beb29ddef13e4ee0f38c55ecead5ec9a2bc06be8a20d33ce9794d2"
+checksum = "571d2708296e8c4000d82ec55939b52fe842a14cc0b0c1fea6d51ecdb5e903c7"
 dependencies = [
  "async-trait",
  "ikigai-core",
@@ -1583,9 +1583,9 @@ dependencies = [
 
 [[package]]
 name = "ikigai-vocab"
-version = "0.1.93"
+version = "0.1.102"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e026bf10754d646becd25cf072e068930b9ae4ea55d4ebced3d97b62f996f96b"
+checksum = "79aa459049a5b94d2cc340b95aae42e0d721f2a1fd25781242ea7c4a4eed3a94"
 dependencies = [
  "ikigai-core",
  "serde_json",
@@ -1628,9 +1628,9 @@ dependencies = [
 
 [[package]]
 name = "ikigai-wire"
-version = "0.1.44"
+version = "0.1.62"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e5bc3dadfb70804e54778e714fe7429c8d10231f956d2131092368c5325c51b2"
+checksum = "6536856e03bbd5889949db1718e39193c692d55262c547ccada2b5aa60c0e879"
 dependencies = [
  "ikigai-core",
  "ikigai-resolve",

@@ -18,11 +18,11 @@ path = "src/bin/server.rs"
 # Published crates from crates.io (graduated off the sibling path deps once
 # ikigai-core/ikigai-vocab were published at 0.1.0). This demo is a standalone
 # proof, intentionally not part of either repo's CI.
-ikigai-core = "0.1.93"  # The re-pin to the published head (ledger #1101). 0.1.92 is the floor
+ikigai-core = "0.1.102"  # The 2026-10-14 wave's published head. 0.1.92 is the floor
                         # tests/k_adapter.rs pins: a refusal a module returns inside `invoke`
                         # is a TIMED trace event tagged ("failed", "denied") (ledger #559, #20);
-                        # below it that refusal left no event. 0.1.93 is the head it was built
-                        # and tested against.
+                        # below it that refusal left no event. 0.1.102 is the head it was built
+                        # and tested against (0.1.93 before it, ledger #1101).
                         # (0.1.63 gave the older need: Kernel::with_aliases + AliasTable — the logical-rewrite table this
                         # host installs so `urn:fn:*` keeps resolving after ikigai-fn 0.2.0
                         # renamed its bindings to `urn:iki:fn:*`. A real floor: the API does
@@ -53,7 +53,7 @@ ikigai-fn = "0.4.1" # the published head (ledger #1101). 0.3.0 made compose a vi
 # The capability-gated file module, here on its wasm32 localStorage backend — the
 # browser proof that the same module serves files natively and in the page.
 ikigai-fs = "0.1.8"  # 0.1.8 = security floor (audit round 3, ledger #856); cacheable file Source (FileEndpoint::cacheable) for the golden thread
-ikigai-vocab = "0.1.93"  # the published head, beside core 0.1.93 (ledger #1101). The AUDIT
+ikigai-vocab = "0.1.102"  # the published head, beside core 0.1.102 (the 2026-10-14 wave). The AUDIT
                          # below is of the floor and still holds: 0.1.22 is the
                          # version that added `space()` — `urn:ikigai:vocab`, the ns#
                          # ontology as a resolvable resource (ikigai-core #41, "Slice 1").
@@ -77,7 +77,7 @@ ikigai-vocab = "0.1.93"  # the published head, beside core 0.1.93 (ledger #1101)
 # The CLI's renderer-agnostic Engine — drives the in-page terminal — and its Resolver
 # seam. 0.1.4 is the async API (eval_async / issue_as_async) that lets the in-page
 # terminal drive the kernel on the JS event loop (M2).
-ikigai-engine = "0.1.44"  # the published head, in lockstep with resolve/wire (ledger #1101);
+ikigai-engine = "0.1.62"  # the published head, in lockstep with resolve/wire (the 2026-10-14 wave);
                           # tracks the ikigai-resolve floor below (it re-exports the
                           # Resolver seam this host drives). 0.1.13 gave the older need: the
                           # structured-Error migration. 0.1.9 was the newest published
@@ -85,7 +85,7 @@ ikigai-engine = "0.1.44"  # the published head, in lockstep with resolve/wire (l
                           # ikigai-core; engine skipped 0.1.10-0.1.12, so 0.1.13 is at once
                           # the fix and the true minimum. (0.1.9 gave the older need:
                           # quote-aware named args — title="two words" — + pipe routing.)
-ikigai-resolve = "0.1.44"  # the published head (ledger #1101). 0.1.17 was the version that COMPILES against ikigai-core 0.1.64+, which
+ikigai-resolve = "0.1.62"  # the published head (the 2026-10-14 wave). 0.1.17 was the version that COMPILES against ikigai-core 0.1.64+, which
                            # added a `canonical` field to `Resolved`. Every crate that builds
                            # that struct literally (rather than through a constructor) stops
                            # compiling — a SOURCE break arriving in a patch, which a bare
@@ -96,14 +96,23 @@ ikigai-resolve = "0.1.44"  # the published head (ledger #1101). 0.1.17 was the v
 # The on-wire Call/Reply protocol — the WASM codec (network demo) speaks it in the
 # browser, and the server speaks it on the other end. Same bytes as ikigai-ipc/quic.
 # Also reused for the module-session codec (encode/decode of ModuleCall/ModuleReply).
-ikigai-wire = "0.1.44"  # the published head (ledger #1101); wire v8 adds WireError::Conflict.
+ikigai-wire = "0.1.62"  # the published head (the 2026-10-14 wave); wire v8 adds WireError::Conflict.
                         # wire v7: WireError + Reply::ErrorTyped (a failure crosses with
                         # its taxonomy), and Call::IssueTraced/Reply::ResolvedTraced
 # The dynamically-loadable module format. The host mounts the lazy XSLT module as a generic
 # WasmModuleSpace and services its HostCalls with serve_host_call; the session protocol + the
 # provenance sink live in the crate (the module runs run_session in its own wasm).
-ikigai-module = "0.3.2"  # the published head (ledger #1101): a failed out-of-band host call is
-                         # recorded as a dependency. 0.3.1 was the floor that COMPILES against ikigai-core 0.1.78+, where
+ikigai-module = "0.4.0"  # the published head, and a SECURITY floor (ledger #83): the host's
+                         # `serve_host_call` clamps the capability a module's HostCall carries
+                         # to the sessions in flight, so a module invoked under a narrow
+                         # session can no longer ask this host for anything by claiming root.
+                         # The `hostCall` export needs no edit for it. 0.4.0 also brings
+                         # `wasm_module_channel!` (ledger #746): each lazy module's channel is
+                         # one line below, and an unwired one answers Unavailable at once
+                         # instead of hanging. Source-breaking here:
+                         # `ModuleSessionTransport::invoke_session` returns
+                         # `ikigai_core::Result`, which the macro writes for us.
+                         # 0.3.1 was the floor that COMPILES against ikigai-core 0.1.78+, where
                          # `Resolved` gained a private field and can only be built through
                          # `Resolved::new`. 0.1.10, 0.2.0 and 0.3.0 all build it by struct
                          # literal, so any of them pins this whole host below core 0.1.78 (the
@@ -114,7 +123,7 @@ ikigai-module = "0.3.2"  # the published head (ledger #1101): a failed out-of-ba
                          # `serve_host_call` takes a TYPED `Result<Representation>` (0.3.0), so
                          # a denied or absent host resource crosses into the module as
                          # Denied/NotFound instead of a flattened string.
-                         # ⚠ `^0.3.1` is also a CEILING (<0.4.0).
+                         # ⚠ `^0.4.0` is also a CEILING (<0.5.0).
 # Outbound HTTP-client module (urn:httpGet…). Already async + executor-agnostic
 # (HttpTransport seam), so the browser supplies a `fetch`-backed transport — same
 # module the native CLI drives with ureq. Unchanged for M2, so straight from crates.io.
@@ -142,7 +151,7 @@ ikigai-runbook = "0.2.1"  # the published head (ledger #1068, #1101). 0.2.0 name
 # parses an RDF syntax and re-serializes to another (or to an HTML table), client-side
 # in wasm. The catalog + FOAF render to HTML through this. (SPARQL deferred to a later
 # slice.) Unpublished during dev — supplied by the [patch.crates-io] below.
-ikigai-rdf = "0.2.1"  # the published head (ledger #1101); 0.2.0 names the space (ledger #987)
+ikigai-rdf = "0.2.4"  # the published head (the 2026-10-14 wave); 0.2.0 names the space (ledger #987)
 # Content sniffing + sniff-and-dispatch (urn:sniff, urn:transrept:auto) — classify
 # opaque bytes and route them to the right transreptor, client-side.
 ikigai-sniff = "0.2.1"  # the published head (ledger #1101); 0.2.0 names the space (ledger #987)
