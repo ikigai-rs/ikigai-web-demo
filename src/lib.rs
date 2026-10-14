@@ -735,7 +735,7 @@ fn xslt_space() -> Arc<dyn Space> {
     Arc::new(ikigai_xslt::space())
 }
 
-/// The JSON-LD operator module (`urn:jsonld:*` — expand / compact / flatten), lazy-loaded as
+/// The JSON-LD operator module (`urn:jsonld:*` — expand / compact / flatten / prune), lazy-loaded as
 /// a wasm module like XSLT, so the heavy `json-ld` tree never enters the host wasm. Same
 /// `WasmModuleSpace` machinery as [`xslt_module`], over its own `jsonldInvokeSession` channel.
 #[cfg(target_family = "wasm")]
@@ -754,9 +754,9 @@ mod jsonld_module {
         Description::new("jsonld")
             .title("JSON-LD operators")
             .summary(
-                "expand / compact / flatten a JSON-LD document (urn:jsonld:expand / :compact / \
-                 :flatten). Runs in a dynamically-loaded wasm module (the json-ld crate), \
-                 fetched on first use.",
+                "expand / compact / flatten / prune a JSON-LD document (urn:jsonld:expand / \
+                 :compact / :flatten / :prune). Runs in a dynamically-loaded wasm module (the \
+                 json-ld crate), fetched on first use.",
             )
             .verb(Verb::Source)
             .verb(Verb::Meta)
@@ -779,7 +779,7 @@ mod jsonld_module {
     }
 
     // Per-op cards mirroring the native `ikigai-jsonld` crate, so the browser catalog lists
-    // the same three endpoints (expand / flatten / compact) as the CLI — declared host-side,
+    // the same four endpoints (expand / flatten / compact / prune) as the CLI — declared host-side,
     // enumerated and `Meta`-rendered without ever loading the wasm module.
     fn expand_card() -> Description {
         Description::new("jsonld-expand")
@@ -823,6 +823,39 @@ mod jsonld_module {
             .input(base_input())
             .output("application/ld+json")
     }
+    // `urn:jsonld:prune` arrived in ikigai-jsonld 0.2.2 (the trust-boundary egress filter,
+    // ledger #1180); the module wasm pages.yml builds at JSONLD_REV serves it.
+    fn prune_card() -> Description {
+        Description::new("jsonld-prune")
+            .title("JSON-LD prune")
+            .summary(
+                "Keep only what a context defines: expand, drop every property, reverse \
+                 property, type and datatype that is not a term of the context (a prefix is not \
+                 a term), drop nodes left empty, compact. Refuses a context with @vocab. The \
+                 trust-boundary egress filter; face=report lists what was dropped.",
+            )
+            .verb(Verb::Source)
+            .verb(Verb::Meta)
+            .input(content_input())
+            .input(
+                ArgSpec::new("context")
+                    .summary(
+                        "the allowlist context, with no @vocab: inline JSON ({…}) or a \
+                         resolvable resource IRI",
+                    )
+                    .class(xsd("string")),
+            )
+            .input(base_input())
+            .input(
+                ArgSpec::new("face")
+                    .summary("document (the pruned document) or report (what was dropped, as JSON)")
+                    .class(xsd("string"))
+                    .one_of(["document", "report"])
+                    .default_value("document"),
+            )
+            .output("application/ld+json")
+            .output("application/json")
+    }
 
     pub fn space() -> WasmModuleSpace {
         // Public, like the native `ikigai_jsonld::space()`, which declares no capability: a
@@ -836,6 +869,7 @@ mod jsonld_module {
         .with_endpoint("urn:jsonld:expand", expand_card())
         .with_endpoint("urn:jsonld:flatten", flatten_card())
         .with_endpoint("urn:jsonld:compact", compact_card())
+        .with_endpoint("urn:jsonld:prune", prune_card())
     }
 }
 
