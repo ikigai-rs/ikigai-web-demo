@@ -92,7 +92,11 @@ one, and the kernel's catalog against the `ik:Endpoint` shape) and asserts the d
 fetched `ikigai_shacl_bg.wasm` while the `?shacl=js` page did not, that the verdicts are right,
 and that both engines report the same violations on (focus node, path, component). Ablated by
 deleting the `window.shaclInvokeSession` line from `dist/index.html`: the default page's first
-validation never answers, and the test fails.
+validation answers at once with a typed `Unavailable` naming the global (``unavailable: module
+channel `shaclInvokeSession` is not wired: …``), and the test fails on the missing `"conforms"`
+(replayed 2026-10-14: failed in 392 ms). Before ikigai-module 0.4.0's `wasm_module_channel!`
+(ledger #746) the hand-written channel HUNG there instead, and the test failed only on its
+timeout.
 
 ## It was verified against the actual bug
 

@@ -653,42 +653,16 @@ impl Endpoint for CatalogRdf {
 mod xslt_module {
     use super::*;
     use ikigai_core::ArgSpec;
-    use ikigai_module::{ModuleFloor, ModuleSessionTransport, WasmModuleSpace};
+    use ikigai_module::{ModuleFloor, WasmModuleSpace};
 
-    // The lazy module's session entry, a global the loader wires to `invoke_session` on the
-    // module wasm (index.html → dist/xslt-loader.js). The heavy module wasm loads inside it
-    // on first call.
-    #[wasm_bindgen]
-    extern "C" {
-        #[wasm_bindgen(catch, js_name = "xsltInvokeSession")]
-        async fn xslt_invoke_session(invoke: Vec<u8>) -> std::result::Result<JsValue, JsValue>;
-    }
-
-    /// The browser transport for the lazy XSLT module: ferry the encoded session bytes to
-    /// the global `xsltInvokeSession` and back. `JsValue` is `!Send`, so confine the call to
-    /// a `spawn_local` task and bridge the (`Send`) bytes back through a oneshot — exactly
-    /// like `BrowserFetchTransport`. (The module's `hostCall` callbacks run on the event loop
-    /// while this awaits.) Everything else — the session, the provenance sink — is generic in
-    /// `ikigai-module`.
-    struct BrowserXsltTransport;
-
-    #[async_trait]
-    impl ModuleSessionTransport for BrowserXsltTransport {
-        async fn invoke_session(&self, invoke: Vec<u8>) -> std::result::Result<Vec<u8>, String> {
-            let (tx, rx) = futures::channel::oneshot::channel();
-            wasm_bindgen_futures::spawn_local(async move {
-                let result = match xslt_invoke_session(invoke).await {
-                    Ok(value) => Ok(js_sys::Uint8Array::new(&value).to_vec()),
-                    Err(e) => Err(e
-                        .as_string()
-                        .unwrap_or_else(|| "xslt module session failed".to_string())),
-                };
-                let _ = tx.send(result);
-            });
-            rx.await
-                .map_err(|_| "xslt module task was dropped".to_string())?
-        }
-    }
+    // The browser transport for the lazy XSLT module: hand the encoded session bytes to the
+    // global `xsltInvokeSession`, which the loader wires to `invoke_session` on the module wasm
+    // (index.html → dist/xslt-loader.js); the heavy module wasm loads inside it on first call.
+    // The module's `hostCall` callbacks run on the event loop while this awaits. The macro
+    // writes the `spawn_local` bridge, and an unwired global answers `Unavailable` at once
+    // (ledger #746). Everything else — the session, the provenance sink — is generic in
+    // `ikigai-module`.
+    ikigai_module::wasm_module_channel!(BrowserXsltTransport = "xsltInvokeSession");
 
     /// The module endpoint's catalog card — handed to [`WasmModuleSpace`] so the lazy module
     /// shows a rich description without being instantiated.
@@ -723,10 +697,14 @@ mod xslt_module {
             .output("text/plain;charset=utf-8")
             // Mirror the module's own marking (ikigai-xslt): a parameterized
             // ik:Transreptor — needs a `stylesheet`, so it's not auto-invocable.
+            // And LOSSY (ledger #538): an arbitrary stylesheet is a projection unless it is
+            // identity-shaped, and the mount cannot know, so it must not claim the injective
+            // transreption a transreptor that says nothing claims (core 0.1.77).
             .transreptor(
                 ["application/xml", "text/xml", "application/rdf+xml"],
                 ["text/html", "text/plain"],
             )
+            .lossy()
     }
 
     /// The `urn:xslt:*` space: a generic `WasmModuleSpace` over the browser transport.
@@ -764,36 +742,11 @@ fn xslt_space() -> Arc<dyn Space> {
 mod jsonld_module {
     use super::*;
     use ikigai_core::ArgSpec;
-    use ikigai_module::{ModuleFloor, ModuleSessionTransport, WasmModuleSpace};
+    use ikigai_module::{ModuleFloor, WasmModuleSpace};
 
-    #[wasm_bindgen]
-    extern "C" {
-        #[wasm_bindgen(catch, js_name = "jsonldInvokeSession")]
-        async fn jsonld_invoke_session(invoke: Vec<u8>) -> std::result::Result<JsValue, JsValue>;
-    }
-
-    /// Browser transport for the lazy JSON-LD module — ferry the encoded session bytes to the
-    /// global `jsonldInvokeSession` and back, confining the `!Send` `JsValue` to a
-    /// `spawn_local` task and bridging the bytes through a oneshot.
-    struct BrowserJsonldTransport;
-
-    #[async_trait]
-    impl ModuleSessionTransport for BrowserJsonldTransport {
-        async fn invoke_session(&self, invoke: Vec<u8>) -> std::result::Result<Vec<u8>, String> {
-            let (tx, rx) = futures::channel::oneshot::channel();
-            wasm_bindgen_futures::spawn_local(async move {
-                let result = match jsonld_invoke_session(invoke).await {
-                    Ok(value) => Ok(js_sys::Uint8Array::new(&value).to_vec()),
-                    Err(e) => Err(e
-                        .as_string()
-                        .unwrap_or_else(|| "jsonld module session failed".to_string())),
-                };
-                let _ = tx.send(result);
-            });
-            rx.await
-                .map_err(|_| "jsonld module task was dropped".to_string())?
-        }
-    }
+    // Browser transport for the lazy JSON-LD module, over the global `jsonldInvokeSession`
+    // (the same generated bridge as XSLT's).
+    ikigai_module::wasm_module_channel!(BrowserJsonldTransport = "jsonldInvokeSession");
 
     /// A representative catalog card for the module's `urn:jsonld:*` prefix — the fallback
     /// for any prefix-matched IRI not declared below. Shown without instantiating the module.
@@ -1054,35 +1007,11 @@ mod shacl_js {
 #[cfg(target_family = "wasm")]
 mod shacl_rudof {
     use super::*;
-    use ikigai_module::{ModuleFloor, ModuleSessionTransport, WasmModuleSpace};
+    use ikigai_module::{ModuleFloor, WasmModuleSpace};
 
-    #[wasm_bindgen]
-    extern "C" {
-        #[wasm_bindgen(catch, js_name = "shaclInvokeSession")]
-        async fn shacl_invoke_session(invoke: Vec<u8>) -> std::result::Result<JsValue, JsValue>;
-    }
-
-    /// Same shape as the xslt/jsonld transports: confine the `!Send` JS call to a
-    /// `spawn_local` task and bridge the (`Send`) bytes back through a oneshot.
-    struct BrowserShaclTransport;
-
-    #[async_trait]
-    impl ModuleSessionTransport for BrowserShaclTransport {
-        async fn invoke_session(&self, invoke: Vec<u8>) -> std::result::Result<Vec<u8>, String> {
-            let (tx, rx) = futures::channel::oneshot::channel();
-            wasm_bindgen_futures::spawn_local(async move {
-                let result = match shacl_invoke_session(invoke).await {
-                    Ok(value) => Ok(js_sys::Uint8Array::new(&value).to_vec()),
-                    Err(e) => Err(e
-                        .as_string()
-                        .unwrap_or_else(|| "shacl module session failed".to_string())),
-                };
-                let _ = tx.send(result);
-            });
-            rx.await
-                .map_err(|_| "shacl module task was dropped".to_string())?
-        }
-    }
+    // Same channel as the xslt/jsonld transports, over the global `shaclInvokeSession`. Unset
+    // (the smoke README's ablation), the first validation answers `Unavailable` naming it.
+    ikigai_module::wasm_module_channel!(BrowserShaclTransport = "shaclInvokeSession");
 
     pub fn space() -> WasmModuleSpace {
         let card = || shacl_card("ikigai-shacl (rudof), a lazily-loaded wasm module, the default");
