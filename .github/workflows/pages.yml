@@ -100,6 +100,16 @@ jobs:
           git -C module-src fetch -q --depth 1 origin "$XSLT_REV"
           git -C module-src checkout -q FETCH_HEAD
           test "$(git -C module-src rev-parse HEAD)" = "$XSLT_REV"
+          # Build against the xrust THIS repo's Cargo.lock holds, not a fresh resolve's.
+          # ikigai-xslt asks for `xrust = "2.1.0"`, and xrust 2.3.0 (2026-10-13) broke it
+          # inside that range: E0599 `populate_key_values`, E0533 `MissingNameSpace` became a
+          # struct variant. The native build was never exposed (it is locked); the module wasm
+          # resolved fresh and went red. Reading the version from Cargo.lock keeps the wasm
+          # module on the code the native build locks, the parity the header above states.
+          XRUST="$(grep -A1 '^name = "xrust"$' Cargo.lock | sed -n 's/^version = "\(.*\)"$/\1/p')"
+          test -n "$XRUST"
+          cargo generate-lockfile --manifest-path module-src/Cargo.toml
+          cargo update --manifest-path module-src/Cargo.toml -p xrust --precise "$XRUST"
           cargo build --release --lib --features module \
             --manifest-path module-src/Cargo.toml --target wasm32-unknown-unknown
           wasm-bindgen --target web --out-dir dist \
