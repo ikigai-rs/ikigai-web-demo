@@ -57,11 +57,16 @@ concurrency:
 # caps xrust below 2.3 (ledger #1492, #1505). The xrust --precise step in the XSLT build below
 # still pins the version this repo's Cargo.lock holds, which 0.2.2's range admits.
 #
+# JSONLD_REV and SHACL_REV then moved with the native lock to the 0.2.3 and 0.3.7 release
+# commits (jsonld PR #17, shacl PR #36; the 2026-10-14 wave's typed refusals, and shacl's
+# subset-validator overdue cap, ledger #1510). Each is the commit its crates.io
+# .cargo_vcs_info.json names.
+#
 # To bump: replace the SHA, push, and let `smoke` vet the result. That is what it is for.
 env:
   XSLT_REV: d843d323e09aca371cc2a5f12fd1ffdf79aa7327    # ikigai-xslt 0.2.2 (xslt PR #28, release-0.2)
-  JSONLD_REV: 452fb1cef110c8941cc9b554e5c3285c37359c09  # ikigai-jsonld 0.2.1 (jsonld PR #11)
-  SHACL_REV: c04d838f714f413b5c37e6cad69962482661e9b5   # ikigai-shacl 0.3.3 (shacl PR #22)
+  JSONLD_REV: 6b5f944f7a78aca81bc7381f58ad4acc0851b920  # ikigai-jsonld 0.2.3 (jsonld PR #17)
+  SHACL_REV: 99e3025ddf8493a2784b3691b2b8b53fb0df6b25   # ikigai-shacl 0.3.7 (shacl PR #36)
 
 jobs:
   build:

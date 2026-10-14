@@ -120,6 +120,7 @@ const INHERITED: &[&str] = &[
     "jsonld-expand",
     "jsonld-flatten",
     "jsonld-compact",
+    "jsonld-prune", // since ikigai-jsonld 0.2.2 (ledger #1180); the browser card is in src/lib.rs
     // ikigai-shacl (native; likewise)
     "shacl-validate",
     // ikigai-runbook
