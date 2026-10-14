@@ -6,30 +6,24 @@
 //! engines) are typed by hand in `src/lib.rs` and never walked here — on native the same
 //! IRIs are served by the linked crates, whose cards are theirs.
 //!
-//! ## The fixture is a scratch jail
+//! ## The walk is scoped to this crate's endpoints (`Suite::own`)
 //!
-//! The walk FIRES `Sink` and `Delete` on `urn:file:*`, and the native file backend is
-//! `std::fs`, so the kernel is built over a tempdir, never the working tree. Two files are
-//! seeded: one for the `file` binding (`Source` reads it, `Sink` overwrites it with `x`:
-//! bindings are per entry, the suite's PENDING #2) and a `flag.txt` holding `true` so
-//! `urn:iki:fn:conditional` has a boolean resource to branch on.
+//! This host composes eight other crates' endpoints. Those answer for themselves (their
+//! own repos run the suite against their own releases), so here the walk is scoped with
+//! `Suite::own` to the ids this crate binds ([`OURS`]) and every other id the kernel
+//! lists is INHERITED: listed, never read, never fired. [`conforms`] holds the walk to
+//! ZERO findings (every own id is kebab-case, so not even NAMES is waived) and pins the
+//! inherited list EXACTLY to [`INHERITED`], so a dependency that quietly gains an
+//! endpoint turns this red rather than joining the pile unseen, and an own binding
+//! missing from [`OURS`] does the same. (Up to `ikigai-conformance` 0.6.1 this file wrote
+//! that partition by hand and walked the dependencies too, asserting only that their
+//! findings were against their ids; at 0.8.0 that walk reported 50 findings, 15 of them
+//! the new REQUIRED check's, all inherited.)
 //!
-//! ## What the walk sees, and what this file partitions
-//!
-//! This host composes eight other crates' endpoints, and the suite walks everything bound
-//! (PENDING #17). Several of those have adopted the suite in their own repos, but the
-//! pinned releases predate it, so at the versions the lock holds they report findings this
-//! crate cannot fix. [`assert_findings`] therefore holds THIS crate's ids ([`OURS`]) to
-//! ZERO findings — every id here is kebab-case, so not even NAMES is waived — and every
-//! other finding to an id in the pinned [`INHERITED`] set; a finding against an id neither
-//! list knows is red, and so is an endpoint the catalog lists that neither list names.
-//! When a dependency is bumped to its conformant release, the inherited count in the
-//! printed report drops on its own — all but two lines, which are this FIXTURE's doing and
-//! will outlive every bump: `conditional` branches on `urn:file:flag.txt` and
-//! `xslt-transform` reads `urn:data:catalog.rdf`, so under no grants each is refused by the
-//! gate of the resource it reaches (`urn:cap:fs:read:*`, `urn:cap:kernel:inspect`) and
-//! ENFORCED reports the declarer's scope against the caller (the suite's PENDING #87). True
-//! of the composed host; the message names the declarer; not a defect of either crate.
+//! Not walking the dependencies also means the walk fires no `Sink` or `Delete` at all:
+//! this crate binds none. The kernel is still built over a scratch tempdir (the file
+//! module's native backend is `std::fs`), and [`conforms`] asserts the seeded file was
+//! never touched.
 //!
 //! Declared to the suite, stated once:
 //!
@@ -37,19 +31,15 @@
 //!   `demo`, `control`, `control-cards`, `about`, `catalog-cards-xsl`): constants embedded
 //!   at build time, cached forever correctly.
 //! - `pure` on `clock-now`: its result is a function of the clock minute, bounded by
-//!   `cacheable_until` (`Expiry::At`) rather than a thread — the spelling the suite has no
-//!   declaration for (PENDING #86); [`clock_now_serves_both_faces_until_the_minute`] pins
-//!   the expiry by hand.
+//!   `cacheable_until` (`Expiry::At`); [`clock_now_serves_both_faces_until_the_minute`]
+//!   pins the expiry by hand.
 //! - `pure` on `catalog-rdf`: exactly as cacheable as core's `urn:kernel:catalog`, which is
 //!   `Never` with no thread (the bound space is fixed for the kernel's life); the cache
 //!   keys on the capability fingerprint. Pinned in [`catalog_rdf_declares_the_scope_it_reaches`].
-//! - `pure` on the constants other crates serve here (`ikigai-vocab`, the runbook's
-//!   `ik-context`, `alignment` and `data-*`): a suite declaration about behavior over THIS
-//!   kernel, not a fix to those crates.
-//! - `opt_out` of `httpGet` Source and `httpHead` Exists: `build_kernel_in` installs the
-//!   browser's `fetch` in the page and NO transport on native (only the server opts in to
-//!   the network, `tests/native_fetch.rs`), so the cache probe cannot resolve them. The opt-out also drops ENFORCED (PENDING #21);
-//!   [`the_http_facades_are_denied_before_the_transport`] pins it by hand.
+//!
+//! REQUIRED (0.8.0) has nothing to drop here: no own action declares a required by-value
+//! input (`clock-now`'s `html` is optional; the rest take none). The browser-only cards
+//! in `src/lib.rs` do declare required inputs, but they are not bound on native.
 //!
 //! ## What the suite cannot hold and this file pins by hand
 //!
@@ -68,24 +58,19 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use ikigai_conformance::{rdf, Fixture, Report, Suite};
+use ikigai_conformance::{rdf, Suite};
 use ikigai_core::{
     ArgRef, Capability, Error, Expiry, Iri, Kernel, Representation, Request, Result, Verb,
 };
 use ikigai_web_demo::build_kernel_in;
 
-/// The file the `file` fixture binds; seeded, then overwritten by the walk's Sink.
+/// A file seeded in the jail; nothing in the walk may touch it.
 const SCRATCH_FILE: &str = "conformance.txt";
-/// A boolean resource for `urn:iki:fn:conditional`'s `if`.
-const FLAG_FILE: &str = "flag.txt";
+/// What [`SCRATCH_FILE`] holds, before and after the walk.
+const SEED: &str = "scratch";
 
-/// A small Turtle graph for the RDF operators' `content` fixtures.
-const TTL: &str = "<urn:example:conformance> <http://purl.org/dc/terms/title> \"t\" .\n";
-/// A JSON-LD document that expands to one triple.
-const JSONLD: &str = r#"{"@id":"urn:example:conformance","http://purl.org/dc/terms/title":"t"}"#;
-
-/// This crate's own description ids, in the kernel the page composes. A new binding without
-/// a line here fails [`conforms`]: the walk's endpoint set is pinned to the two lists.
+/// This crate's own description ids, in the kernel the page composes: the `Suite::own`
+/// scope. A new own binding without a line here is inherited, and fails [`conforms`].
 const OURS: &[&str] = &[
     "greeter",
     "clock-now",
@@ -104,10 +89,10 @@ const OURS: &[&str] = &[
     "runbook-timer",
 ];
 
-/// The dependencies' ids the walk also sees, at the versions the lock pins. Their findings
-/// are theirs.
+/// The dependencies' ids the kernel also binds: inherited, not walked, pinned EXACTLY so a
+/// new one is red. Their conformance is their own repos' (each runs the suite).
 const INHERITED: &[&str] = &[
-    // ikigai-fn 0.2.0
+    // ikigai-fn
     "toUpper",
     "reverseList",
     "compose",
@@ -116,28 +101,28 @@ const INHERITED: &[&str] = &[
     "split",
     "greet",
     "echo",
-    // ikigai-fs 0.1.5 (0.1.6, the adopted release, is unpublished)
+    // ikigai-fs
     "file",
-    // ikigai-http 0.1.7
+    // ikigai-http
     "httpGet",
     "httpHead",
     "httpPost",
     "httpPut",
     "httpPatch",
     "httpDelete",
-    // ikigai-rdf 0.1.4
+    // ikigai-rdf
     "rdf-transrept",
     "rdf-union",
     "rdf-diff",
-    // ikigai-xslt 0.1.1 (native; the browser card is this crate's, typed by hand)
+    // ikigai-xslt (native; the browser card is this crate's, typed by hand)
     "xslt-transform",
-    // ikigai-jsonld 0.1.1 (native; likewise)
+    // ikigai-jsonld (native; likewise)
     "jsonld-expand",
     "jsonld-flatten",
     "jsonld-compact",
-    // ikigai-shacl 0.1.1 (native; likewise)
+    // ikigai-shacl (native; likewise)
     "shacl-validate",
-    // ikigai-runbook 0.1.13
+    // ikigai-runbook
     "runbook-basics",
     "runbook-piping",
     "runbook-http",
@@ -159,9 +144,9 @@ const INHERITED: &[&str] = &[
     "action-greet",
     "action-geocode",
     "action-mail",
-    // ikigai-vocab (the lock's)
+    // ikigai-vocab
     "ikigai-vocab",
-    // ikigai-sniff 0.1.1
+    // ikigai-sniff
     "sniff",
     "transrept-auto",
 ];
@@ -174,8 +159,7 @@ struct Jail {
 
 fn jail() -> Jail {
     let dir = tempfile::tempdir().expect("tempdir");
-    std::fs::write(dir.path().join(SCRATCH_FILE), "scratch").expect("seed");
-    std::fs::write(dir.path().join(FLAG_FILE), "true").expect("seed the flag");
+    std::fs::write(dir.path().join(SCRATCH_FILE), SEED).expect("seed");
     let kernel = build_kernel_in("Embedded (conformance)", dir.path());
     Jail { dir, kernel }
 }
@@ -212,92 +196,16 @@ fn no_grants() -> Capability {
     Capability::scoped(Vec::<String>::new())
 }
 
-/// The suite, configured for this host (the declarations the module docs state). The
-/// SHACL fixture's data graph is read from the kernel so the walk validates the runbook's
-/// own sample rather than a copy of it.
-fn suite(kernel: &Kernel) -> Suite {
-    let account_ok = text(&source(kernel, "urn:data:account-ok", &[]));
-    Suite::new()
-        .fixture(Fixture::new("file", Verb::Source).binding("path", SCRATCH_FILE))
-        .fixture(Fixture::new("compose", Verb::Source).arg("src", "urn:data:page"))
-        .fixture(
-            Fixture::new("conditional", Verb::Source)
-                .arg("if", format!("urn:file:{FLAG_FILE}"))
-                .arg("then", "urn:data:about")
-                .arg("else", "urn:demo:greeter"),
-        )
-        .fixture(
-            Fixture::new("rdf-transrept", Verb::Source)
-                .arg("content", TTL)
-                .arg("as", "text/turtle"),
-        )
-        .fixture(
-            Fixture::new("rdf-union", Verb::Source)
-                .arg("content", TTL)
-                .arg("with", TTL),
-        )
-        .fixture(
-            Fixture::new("rdf-diff", Verb::Source)
-                .arg("content", TTL)
-                .arg("with", TTL),
-        )
-        // The Catalog page's own transform: catalog → RDF/XML → cards.
-        .fixture(
-            Fixture::new("xslt-transform", Verb::Source)
-                .arg("src", "urn:data:catalog.rdf")
-                .arg("stylesheet", "urn:style:catalog-cards")
-                .arg("as", "text/html"),
-        )
-        .fixture(
-            Fixture::new("jsonld-expand", Verb::Source)
-                .arg("content", JSONLD)
-                .arg("base", "urn:example:"),
-        )
-        .fixture(
-            Fixture::new("jsonld-flatten", Verb::Source)
-                .arg("content", JSONLD)
-                .arg("base", "urn:example:"),
-        )
-        .fixture(
-            Fixture::new("jsonld-compact", Verb::Source)
-                .arg("content", JSONLD)
-                .arg("context", "urn:data:ik-context")
-                .arg("base", "urn:example:"),
-        )
-        .fixture(
-            Fixture::new("shacl-validate", Verb::Source)
-                .arg("data", account_ok)
-                .arg("shapes", "urn:data:account-shape")
-                .arg("as", "text/turtle"),
-        )
-        .fixture(
-            Fixture::new("transrept-auto", Verb::Source)
-                .arg("content", TTL)
-                .arg("as", "text/turtle"),
-        )
-        .opt_out(
-            "httpGet",
-            Some(Verb::Source),
-            "build_kernel_in installs no network transport on native (only the server \
-             opts in); denial under no grants pinned by hand",
-        )
-        .opt_out(
-            "httpHead",
-            Some(Verb::Exists),
-            "same: no network transport on a native build_kernel_in kernel",
-        )
+/// The suite, configured for this host: scoped to [`OURS`], with the declarations the
+/// module docs state.
+fn suite() -> Suite {
+    let suite = OURS.iter().fold(Suite::new(), |suite, id| suite.own(*id));
+    suite
         .pure("greeter")
         .cacheable("greeter")
         .pure("clock-now")
         .pure("catalog-rdf")
         .cacheable("catalog-rdf")
-        .pure("ikigai-vocab")
-        .pure("ik-context")
-        .pure("alignment")
-        .pure("data-account-shape")
-        .pure("data-account-ok")
-        .pure("data-account-bad")
-        .pure("data-endpoint-shape")
         .pure("web-cli")
         .cacheable("web-cli")
         .pure("page")
@@ -316,72 +224,43 @@ fn suite(kernel: &Kernel) -> Suite {
         .cacheable("catalog-cards-xsl")
 }
 
-/// Every id the kernel's catalog describes.
-fn walked_ids(kernel: &Kernel) -> BTreeSet<String> {
-    kernel
-        .entries()
-        .expect("an enumerable root")
-        .iter()
-        .filter(|e| !e.pattern.starts_with("urn:kernel:"))
-        .map(|e| {
-            kernel
-                .describe_pattern(&e.pattern)
-                .unwrap_or_else(|| panic!("`{}` describes itself", e.pattern))
-                .id
-        })
-        .collect()
-}
-
-/// The walk's verdict on THIS crate: no finding of any check against one of `ours`, every
-/// other finding against a pinned dependency id, the catalog equal to both lists together,
-/// and nothing skipped.
-fn assert_findings(report: &Report, kernel: &Kernel, ours: &[&str], inherited: &[&str]) {
-    let ours: BTreeSet<&str> = ours.iter().copied().collect();
-    let inherited: BTreeSet<&str> = inherited.iter().copied().collect();
-    let mut theirs = 0;
-    for finding in &report.findings {
-        let id = finding.endpoint.as_str();
-        assert!(
-            !ours.contains(id),
-            "a finding against this crate's own endpoint: {finding}"
-        );
-        assert!(
-            inherited.contains(id),
-            "a finding against an endpoint this file does not list: {finding}"
-        );
-        theirs += 1;
-    }
-    eprintln!(
-        "{theirs} inherited finding(s) against {} dependency endpoint(s); 0 against this crate's {}",
-        inherited.len(),
-        ours.len()
-    );
-    let expected: BTreeSet<String> = ours.union(&inherited).map(|s| s.to_string()).collect();
-    assert_eq!(
-        walked_ids(kernel),
-        expected,
-        "the catalog is exactly the two lists"
-    );
-    assert_eq!(report.endpoints, expected.len(), "{report}");
-    assert_eq!(
-        report.checks.skipped().count(),
-        0,
-        "every check runs: {report}"
-    );
+fn sorted(ids: &[impl AsRef<str>]) -> BTreeSet<String> {
+    ids.iter().map(|s| s.as_ref().to_string()).collect()
 }
 
 #[test]
 fn conforms() {
     let jail = jail();
-    let report = suite(&jail.kernel).run_blocking(&jail.kernel);
+    let report = suite().run_blocking(&jail.kernel);
     // Printed even when clean (`--nocapture`): the report is the record.
     eprintln!("{report}");
-    assert_findings(&report, &jail.kernel, OURS, INHERITED);
-    // The walk's Sink landed in the jail, not beside the sources.
+    report.assert_clean();
+    assert_eq!(
+        sorted(&report.walked),
+        sorted(OURS),
+        "walked exactly this crate's ids"
+    );
+    assert_eq!(report.endpoints, OURS.len(), "{report}");
+    assert_eq!(
+        sorted(&report.declared.inherited),
+        sorted(INHERITED),
+        "the inherited list is pinned: a new dependency endpoint is a decision"
+    );
+    assert_eq!(
+        report.declared.inherited.len(),
+        INHERITED.len(),
+        "no inherited id listed twice"
+    );
+    assert_eq!(
+        report.checks.skipped().count(),
+        0,
+        "every check runs: {report}"
+    );
+    // Nothing the walk fired reached the file module: it is inherited, not walked.
     assert_eq!(
         std::fs::read_to_string(jail.dir.path().join(SCRATCH_FILE)).expect("scratch"),
-        "x",
-        "PIPELINE fired the file Sink with `content=x` into the scratch jail"
+        SEED,
+        "the walk fired nothing at the file module"
     );
     assert!(
         !Path::new(SCRATCH_FILE).exists(),
@@ -534,8 +413,9 @@ fn catalog_rdf_declares_the_scope_it_reaches() {
     assert!(kernel.is_cached(&probe, &Capability::root()));
 }
 
-/// The opted-out actions, by hand: every HTTP facade is `Denied` under no grants — the
-/// kernel's floor on the declared `urn:cap:net:*` — before the transport is reached; and
+/// The HTTP facades, by hand (ikigai-http's, inherited and not walked): every one is
+/// `Denied` under no grants — the kernel's floor on the declared `urn:cap:net:*` — before
+/// the transport is reached; and
 /// under a grant it IS reached, which on a native `build_kernel_in` kernel is the missing
 /// transport's refusal, not a denial (and never a real host).
 #[test]
