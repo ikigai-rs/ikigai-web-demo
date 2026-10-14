@@ -51,9 +51,15 @@ concurrency:
 # release commits (the caller-input bounds of ledger #916 and #1042), so each module wasm is the
 # code the native build locks, as above.
 #
+# XSLT_REV then moved to the 0.2.2 release commit (xslt PR #28, on its release-0.2 branch, not
+# main): the 0.2.1 pin above was 1760b37, which is NOT the commit crates.io's 0.2.1 was cut from
+# (1ce7c34) and asks for an uncapped `xrust = "2.1.0"`. 0.2.2 is cut from the pinned commit and
+# caps xrust below 2.3 (ledger #1492, #1505). The xrust --precise step in the XSLT build below
+# still pins the version this repo's Cargo.lock holds, which 0.2.2's range admits.
+#
 # To bump: replace the SHA, push, and let `smoke` vet the result. That is what it is for.
 env:
-  XSLT_REV: 1760b370fb13defc72a535130464374ac4de58b6    # ikigai-xslt 0.2.1 (xslt PR #18)
+  XSLT_REV: d843d323e09aca371cc2a5f12fd1ffdf79aa7327    # ikigai-xslt 0.2.2 (xslt PR #28, release-0.2)
   JSONLD_REV: 452fb1cef110c8941cc9b554e5c3285c37359c09  # ikigai-jsonld 0.2.1 (jsonld PR #11)
   SHACL_REV: c04d838f714f413b5c37e6cad69962482661e9b5   # ikigai-shacl 0.3.3 (shacl PR #22)
 

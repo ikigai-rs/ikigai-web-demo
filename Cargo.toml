@@ -173,8 +173,9 @@ wtransport = "0.7"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util", "time"] }  # time: the native smoke's bound
 # XSLT linked natively (the server can't lazy-load a wasm module). On wasm the host
 # instead lazy-loads `ikigai-xslt-module` (xrust kept OUT of the host wasm) — Phase 2.
-ikigai-xslt = "0.2.1"  # caller XML bounded, run on a stack sized for the bound (ledger #916);
-                       # pages.yml's XSLT_REV is this release's commit
+ikigai-xslt = "0.2.2"  # 0.2.1's caller-XML bounds (ledger #916), capped below xrust 2.3,
+                       # which it does not build on (ledger #1492, #1505); pages.yml's
+                       # XSLT_REV is this release's commit
 # JSON-LD operators linked natively (same reason as XSLT — no wasm lazy-load on the
 # server). On wasm the host lazy-loads the module instead (json-ld kept out of the host).
 ikigai-jsonld = "0.2.1"  # JSON-LD nesting bounded at 64, on a sized thread (ledger #1042);
