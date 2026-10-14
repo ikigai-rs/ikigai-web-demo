@@ -257,8 +257,10 @@ web-sys = { version = "0.3", features = [
 # The module recipe as one test (tests/conformance.rs): walks every endpoint this host
 # binds, natively, over the same kernel the page composes. The suite is the published
 # contract at its published head (ledger #1101): 0.2.0 was ceilinged below 0.3 (AUTHORITY),
-# 0.5 (purity), 0.6 (SPACE-NAME) and 0.6.1 (an Expiry::At deadline is a bound).
-ikigai-conformance = "0.6.1"
+# 0.5 (purity), 0.6 (SPACE-NAME) and 0.6.1 (an Expiry::At deadline is a bound); 0.6.1 was
+# ceilinged below 0.7 (VALIDATE) and 0.8 (REQUIRED, and `Suite::own`, which the test now
+# uses to scope the walk to this crate's endpoints). ⚠ `^0.8.0` is a CEILING too (<0.9.0).
+ikigai-conformance = "0.8.0"
 # A scratch jail for the file module: the walk FIRES Sink/Delete, and the native
 # backend is std::fs, so the fixture must never be this repo's tree.
 tempfile = "3"
