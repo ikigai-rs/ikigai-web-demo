@@ -182,6 +182,13 @@ refuses is a typed `Denied`, before anything touches the disk.
 - `dist/net.html` — the network demo (pull `urn:data:page` over WebTransport).
   The committed files under `dist/`; the `.js`/`.wasm` are generated and gitignored.
 
+## Accessibility
+
+[ACCESSIBILITY.md](ACCESSIBILITY.md) says what the composed page, the in-page terminal, the runbook
+and `net.html` aim at (WCAG 2.2 AA, evaluation in progress, no conformance claim), what has been
+tested, the barriers known today, and how to report one: an issue with the `accessibility` label,
+or private vulnerability reporting for anything sensitive.
+
 ## License
 
 Demo code; same license as the ikigai crates (MIT OR Apache-2.0).
