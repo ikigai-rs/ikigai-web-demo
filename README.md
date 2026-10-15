@@ -83,8 +83,9 @@ checkout builds on its own.
 From the repository root:
 
 ```bash
-# 1. Compile the crate to a raw .wasm (no JS bindings yet).
-cargo build --release --target wasm32-unknown-unknown
+# 1. Compile the library to a raw .wasm (no JS bindings yet). `--lib` matters: the
+#    crate also has a native-only server binary, which does not build for wasm.
+cargo build --release --lib --target wasm32-unknown-unknown
 
 # 2. Generate the JS glue + processed .wasm into dist/, next to index.html.
 wasm-bindgen --target web --out-dir dist \
