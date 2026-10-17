@@ -10,7 +10,7 @@
 //!
 //! It resolves `urn:time:now` (computed, then again within the minute, when the cached
 //! answer's `Expiry::At` is judged against the server's clock), and one granted
-//! `urn:httpGet` against a loopback stub, which only a server with a native transport
+//! `urn:http:get` against a loopback stub, which only a server with a native transport
 //! installed can answer. Every step is bounded: a server that never prints, never binds or
 //! never answers fails here, loudly, with what it did print.
 //!
@@ -205,12 +205,12 @@ async fn the_native_server_resolves_the_clock_and_a_granted_fetch() {
             call(
                 &connection,
                 &Call::IssueAs(
-                    request("urn:httpGet", &[("url", &stub.url("/ok"))]),
+                    request("urn:http:get", &[("url", &stub.url("/ok"))]),
                     stub.grant(&["/ok"]),
                 ),
             )
             .await,
-            "a granted urn:httpGet",
+            "a granted urn:http:get",
         );
         assert_eq!(fetched, "stub ok");
 
@@ -218,7 +218,7 @@ async fn the_native_server_resolves_the_clock_and_a_granted_fetch() {
         match call(
             &connection,
             &Call::IssueAs(
-                request("urn:httpGet", &[("url", &stub.url("/elsewhere"))]),
+                request("urn:http:get", &[("url", &stub.url("/elsewhere"))]),
                 Capability::scoped([format!("urn:cap:net:127.0.0.1:{}/ok", stub.port)]),
             ),
         )

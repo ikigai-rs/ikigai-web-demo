@@ -104,12 +104,12 @@ const INHERITED: &[&str] = &[
     // ikigai-fs
     "file",
     // ikigai-http
-    "httpGet",
-    "httpHead",
-    "httpPost",
-    "httpPut",
-    "httpPatch",
-    "httpDelete",
+    "http-get",
+    "http-head",
+    "http-post",
+    "http-put",
+    "http-patch",
+    "http-delete",
     // ikigai-rdf
     "rdf-transrept",
     "rdf-union",
@@ -425,12 +425,12 @@ fn the_http_facades_are_denied_before_the_transport() {
     let kernel = &jail.kernel;
     let url = [("url", "https://example.com/")];
     for (target, verb) in [
-        ("urn:httpGet", Verb::Source),
-        ("urn:httpHead", Verb::Exists),
-        ("urn:httpPost", Verb::Sink),
-        ("urn:httpPut", Verb::Sink),
-        ("urn:httpPatch", Verb::Sink),
-        ("urn:httpDelete", Verb::Delete),
+        ("urn:http:get", Verb::Source),
+        ("urn:http:head", Verb::Exists),
+        ("urn:http:post", Verb::Sink),
+        ("urn:http:put", Verb::Sink),
+        ("urn:http:patch", Verb::Sink),
+        ("urn:http:delete", Verb::Delete),
     ] {
         match issue(kernel, request(verb, target, &url), &no_grants()) {
             Err(Error::Denied(_)) => {}
@@ -439,7 +439,7 @@ fn the_http_facades_are_denied_before_the_transport() {
     }
     match issue(
         kernel,
-        request(Verb::Source, "urn:httpGet", &url),
+        request(Verb::Source, "urn:http:get", &url),
         &Capability::root(),
     ) {
         Err(Error::Denied(e)) => panic!("root reaches the transport, got denied: {e}"),

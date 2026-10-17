@@ -124,11 +124,13 @@ ikigai-module = "0.4.0"  # the published head, and a SECURITY floor (ledger #83)
                          # a denied or absent host resource crosses into the module as
                          # Denied/NotFound instead of a flattened string.
                          # ⚠ `^0.4.0` is also a CEILING (<0.5.0).
-# Outbound HTTP-client module (urn:httpGet…). Already async + executor-agnostic
+# Outbound HTTP-client module (urn:http:get…). Already async + executor-agnostic
 # (HttpTransport seam), so the browser supplies a `fetch`-backed transport — same
 # module the native CLI drives with ureq. Unchanged for M2, so straight from crates.io.
-ikigai-http = "0.1.9"  # the published head (ledger #1101): the host-deny regression pinned
-                       # (ledger #874), core floor 0.1.86
+ikigai-http = "0.2.0"  # the published head (ledger #11): ids `http-get`…, IRIs `urn:http:get`…;
+                       # the old `urn:httpGet`… resolve as deprecated aliases until 0.3.0.
+                       # 0.1.9 (ledger #1101) pinned the host-deny regression
+                       # (ledger #874), core floor 0.1.86. ⚠ `^0.2.0` is also a CEILING (<0.3.0).
 # Interactive runbook module (urn:runbook:*) — same module the CLI links; local path
 # during dev, publish/git when stable (like engine/resolve).
 ikigai-runbook = "0.2.2"  # the published head (ledger #1068, #1101; 0.2.2 the 2026-10-14 wave). 0.2.0 names the space
