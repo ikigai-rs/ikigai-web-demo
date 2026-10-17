@@ -175,7 +175,7 @@ second host with its own `main`, and two native-only panics (a `js_sys` clock, a
 `spawn_local` fetch) once sat in it unhit because nothing ever asked it for the time or a
 granted fetch (ledger #186). `tests/native_smoke.rs` starts the built binary on loopback,
 connects over WebTransport, and resolves `urn:time:now` twice plus one granted
-`urn:httpGet` against a 127.0.0.1 stub, all under a 60-second bound. It is a `cargo test`,
+`urn:http:get` against a 127.0.0.1 stub, all under a 60-second bound. It is a `cargo test`,
 so it runs in `ci.yml`, not here: it needs the native toolchain this job does not install,
 and no `dist/`. Replayed against a server whose native clock panics, it fails with the
 server's panic printed and "closed the stream without a reply"; against a server with no

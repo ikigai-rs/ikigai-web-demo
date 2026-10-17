@@ -1255,7 +1255,7 @@ pub fn build_kernel_with_transport(
             ikigai_fs::FileEndpoint::new(file_root).cacheable(),
         );
     // The root is a Fallback over the local space, then the HTTP module on the caller's
-    // transport — `fetch` in the page, so `urn:httpGet url=…` resolves against the live
+    // transport — `fetch` in the page, so `urn:http:get url=…` resolves against the live
     // web from inside the tab, the same resource model the native CLI drives with ureq.
     // A `Date`-backed clock lets the kernel honour `Cache-Control: max-age` (and feeds
     // `urn:kernel:constraint` timing), exactly as `SystemClock` does natively.

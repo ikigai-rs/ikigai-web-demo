@@ -28,7 +28,7 @@ fn server_kernel() -> (tempfile::TempDir, Kernel) {
 }
 
 fn get(kernel: &Kernel, url: &str, capability: &Capability) -> Result<String, Error> {
-    let request = Request::new(Verb::Source, Iri::parse("urn:httpGet").expect("iri"))
+    let request = Request::new(Verb::Source, Iri::parse("urn:http:get").expect("iri"))
         .with_arg("url", ArgRef::Inline(url.as_bytes().to_vec()));
     futures::executor::block_on(kernel.issue(request, capability))
         .map(|repr| String::from_utf8(repr.bytes).expect("UTF-8"))
