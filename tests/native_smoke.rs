@@ -167,6 +167,84 @@ fn text(reply: Reply, what: &str) -> String {
     }
 }
 
+/// Wire v9 through the real binary (ledger #1546): a peer that carries its run context
+/// (`Call::IssueWith`, variant 5) is answered as the `IssueAs` it extends, with the same
+/// bytes a plain `Issue` of the same request gets, and a recording peer gets its spans.
+/// The page never sends this call (see `tests/wire_codec.rs`); another kernel resolving
+/// through the demo does. On main before this arc the server did not decode the variant.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_native_server_answers_a_wire_v9_issue_with() {
+    use ikigai_wire::{IssueWith, TraceContext};
+
+    let server = start();
+    let addr = server.addr;
+    let cert = server.cert.clone();
+    let smoke = async move {
+        let client = Endpoint::client(
+            ClientConfig::builder()
+                .with_bind_default()
+                .with_server_certificate_hashes([cert])
+                .build(),
+        )
+        .expect("client");
+        let connection = client
+            .connect(format!("https://{addr}/"))
+            .await
+            .expect("a WebTransport session with the server");
+        let upper = || request("urn:iki:fn:toUpper", &[("in", "hi")]);
+        let with = IssueWith {
+            trace: None,
+            retries: Some(1),
+            time_left_ms: Some(30_000),
+        };
+
+        let plain = text(
+            call(&connection, &Call::Issue(upper())).await,
+            "a plain Issue",
+        );
+        let carried = text(
+            call(
+                &connection,
+                &Call::IssueWith(upper(), Capability::root(), with),
+            )
+            .await,
+            "an IssueWith carrying a run context",
+        );
+        assert_eq!(plain, "HI");
+        assert_eq!(
+            carried, plain,
+            "the run context changes nothing about the answer"
+        );
+
+        let recording = IssueWith {
+            trace: Some(TraceContext {
+                trace_id: 1,
+                parent_span: None,
+            }),
+            ..with
+        };
+        match call(
+            &connection,
+            &Call::IssueWith(upper(), Capability::root(), recording),
+        )
+        .await
+        {
+            Reply::ResolvedTraced(repr, _, events) => {
+                assert_eq!(String::from_utf8(repr.bytes).expect("UTF-8"), "HI");
+                assert!(
+                    events.iter().any(|e| e.target == "urn:iki:fn:toUpper"),
+                    "a recording peer gets the spans back: {events:?}"
+                );
+            }
+            other => panic!("a recording IssueWith answers ResolvedTraced, got {other:?}"),
+        }
+    };
+    tokio::time::timeout(BOUND, smoke)
+        .await
+        .expect("the native server answered within the bound");
+    drop(server);
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn the_native_server_resolves_the_clock_and_a_granted_fetch() {
     let server = start();

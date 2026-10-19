@@ -110,6 +110,10 @@ const INHERITED: &[&str] = &[
     "http-put",
     "http-patch",
     "http-delete",
+    // The two WebDAV methods, since ikigai-http 0.2.2 (ledger #1875), crossed here on the
+    // way to 0.3.0 (ledger #1546): bound beside the six above, asked by nothing in the page.
+    "http-propfind",
+    "http-report",
     // ikigai-rdf
     "rdf-transrept",
     "rdf-union",
@@ -223,6 +227,12 @@ fn suite() -> Suite {
         .cacheable("about")
         .pure("catalog-cards-xsl")
         .cacheable("catalog-cards-xsl")
+        // FAILURES (ikigai-conformance 0.10, opt-in until 0.11 makes it the default; ledger
+        // #1546): an action that states its failure classes fails only with one it admits.
+        // None of this host's own actions states any yet, so each is listed on a `failures:`
+        // line and nothing is a finding; opting in now is what makes the first declaration
+        // checked rather than decorative.
+        .check_failures()
 }
 
 fn sorted(ids: &[impl AsRef<str>]) -> BTreeSet<String> {
