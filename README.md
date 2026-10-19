@@ -158,6 +158,28 @@ sent as root (the terminal's default) reaches whatever host it names.
 Needs Chrome/Edge (or recent Firefox). It isn't on GitHub Pages — Pages is
 static-only, and this needs a running server — so it's run-it-yourself.
 
+### The wire version (2026-10-19: wire v9 and the failure classes)
+
+The page's codec and the server are the **same build of this crate** (`ikigai-wire` 0.1.66,
+wire v9): WebTransport gives a browser no say over the ALPN, so nothing negotiates a version
+here, and `pages.yml` rebuilds `dist/` from the crate on every push. What that means in
+practice:
+
+- **The page sends only `Issue`, `IsCached` and `Entries`**, the wire's first three variants,
+  so it still works against a v8 (or older) server. The server additionally answers a v9
+  `IssueWith` from another kernel: the request runs under the run context it carried
+  (retries left, time left, added to this server's clock), as the `IssueAs` it extends; a
+  recording peer gets its spans back as with `IssueTraced`.
+- **A failure crosses typed, at v9.** `decodeReply` renders the five classes wire v9 added
+  (`retry after 30000 ms: …`, `over budget: …`, `refused: …`, `unsupported: …`, and
+  `nesting budget exceeded: …`) exactly as the kernel displays them — the shared
+  failure-class vectors. A `dist/` built from the crate **before** this pin shows such a
+  failure as `decode failed: …`: rebuild it (steps 1-2 above) after pulling.
+- With `ikigai-http` 0.3.0 the HTTP endpoints type an origin's answers by one status table:
+  401/403 are `refused` (were `denied`), 429 is `retry after …` (and is not transient), 500
+  is `endpoint error` (was `unavailable`). The terminal shows whichever the endpoint returns;
+  nothing in this host matches on them.
+
 ## Conformance
 
 The host passes [`ikigai-conformance`](https://crates.io/crates/ikigai-conformance) —

@@ -40,7 +40,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use ikigai_core::{Capability, Kernel};
+use ikigai_core::{Capability, Clock, Kernel, SystemClock};
 use ikigai_resolve::{Resolver, SpanCollector};
 use ikigai_wire::{decode, encode, Call, Reply, WireError};
 use tokio::io::AsyncReadExt;
@@ -336,7 +336,11 @@ fn dispatch(kernel: &Kernel, bytes: &[u8]) -> Vec<u8> {
         // Failures go back as `ErrorTyped`, not the flat `Error(String)`: the wire
         // taxonomy is what lets the client keep a remote `Denied` permanent and a
         // remote `Timeout` transient. Same choice ikigai-ipc/ikigai-quic make, so all
-        // three transports answer a failure identically.
+        // three transports answer a failure identically. Unlike those two, this transport
+        // negotiates no wire version (a browser cannot choose an ALPN), so a failure crosses
+        // at THIS crate's wire (v9 since 0.1.66: `RetryAfter`, `OverBudget`, `Refused`,
+        // `Unsupported` and `DepthExceeded` typed, never downgraded with `for_peer`). The
+        // page's codec is the same build of the same crate, which is what makes that safe.
         Ok(Call::Issue(request)) => match Resolver::issue(kernel, request) {
             Ok((representation, status)) => Reply::Resolved(representation, status),
             Err(e) => Reply::ErrorTyped(WireError::from(&e)),
@@ -363,6 +367,46 @@ fn dispatch(kernel: &Kernel, bytes: &[u8]) -> Vec<u8> {
                     Reply::ResolvedTraced(representation, status, collector.take())
                 }
                 Err(e) => Reply::ErrorTyped(WireError::from(&e)),
+            }
+        }
+        // Wire v9 (ledger #1546): a peer's RUN CONTEXT rides with the request — what is
+        // left of its retry pool and of its deadline, the deadline as time LEFT so two
+        // clocks need not agree. The page's own codec never sends it (`encodeIssue` and
+        // its siblings in src/lib.rs send `Issue`), so this is another kernel resolving
+        // through the demo. The context is rebuilt at THIS server's now (`SystemClock`,
+        // the clock the native kernel runs on), and the kernel narrows the retries to the
+        // carried capability's entitlement, which on a kernel with no retry budget — this
+        // one — is none: a peer can shorten its own run here and never lengthen it. The
+        // capability is served as `IssueAs` serves it (root is the ceiling, so resolving
+        // under it is the clamp), and a recording peer is answered with its spans, as
+        // `IssueTraced` is.
+        Ok(Call::IssueWith(request, capability, with)) => {
+            let context = with.issue_context(SystemClock.now());
+            match with.trace {
+                Some(_ctx) => {
+                    let collector = Arc::new(SpanCollector::default());
+                    match ikigai_resolve::issue_traced_as_with_context(
+                        kernel,
+                        request,
+                        &capability,
+                        collector.clone(),
+                        context,
+                    ) {
+                        Ok((representation, status)) => {
+                            Reply::ResolvedTraced(representation, status, collector.take())
+                        }
+                        Err(e) => Reply::ErrorTyped(WireError::from(&e)),
+                    }
+                }
+                None => match ikigai_resolve::issue_as_with_context(
+                    kernel,
+                    request,
+                    &capability,
+                    context,
+                ) {
+                    Ok((representation, status)) => Reply::Resolved(representation, status),
+                    Err(e) => Reply::ErrorTyped(WireError::from(&e)),
+                },
             }
         }
         // Trusted in-process path (like `issue` above, which resolves under root), so
@@ -544,6 +588,81 @@ mod edge {
         let result = client.connect(options.build()).await.map(|_| ());
         task.abort();
         result
+    }
+
+    /// Wire v9's `IssueWith` (ledger #1546) is served as the `IssueAs` it extends, under the
+    /// run context it carries: a plain one answers `Resolved` byte-for-byte as `Issue` does,
+    /// a recording one answers `ResolvedTraced` with the spans as `IssueTraced` does, and a
+    /// capability that does not cover the target is refused typed, as it is without the
+    /// context. On main before this arm the match did not cover the variant at all
+    /// (E0004 under wire 0.1.66; under 0.1.63 the call did not decode).
+    #[test]
+    fn a_wire_v9_issue_with_is_served_as_the_issue_as_it_extends() {
+        use ikigai_core::{ArgRef, Iri, Request, Verb};
+        use ikigai_wire::IssueWith;
+
+        let jail = tempfile::tempdir().expect("tempdir");
+        let kernel = ikigai_web_demo::build_kernel_in("Remote (test)", jail.path().to_path_buf());
+        let upper = || {
+            Request::new(Verb::Source, Iri::parse("urn:iki:fn:toUpper").unwrap())
+                .with_arg("in", ArgRef::Inline(b"hi".to_vec()))
+        };
+        let answer = |call: &Call| {
+            decode::<Reply>(&dispatch(&kernel, &encode(call).unwrap())).expect("a Reply")
+        };
+        let with = IssueWith {
+            trace: None,
+            retries: Some(2),
+            time_left_ms: Some(30_000),
+        };
+
+        // The context changes nothing about the answer: the same bytes as a plain `Issue`.
+        let plain = answer(&Call::Issue(upper()));
+        let carried = answer(&Call::IssueWith(upper(), Capability::root(), with));
+        match (&plain, &carried) {
+            (Reply::Resolved(a, _), Reply::Resolved(b, _)) => {
+                assert_eq!(a.bytes, b"HI");
+                assert_eq!(a.bytes, b.bytes);
+            }
+            other => panic!("toUpper resolves both ways: {other:?}"),
+        }
+
+        // A recording peer gets its spans back, exactly as `IssueTraced` answers.
+        let ctx = ikigai_wire::TraceContext {
+            trace_id: 7,
+            parent_span: None,
+        };
+        let recording = IssueWith {
+            trace: Some(ctx),
+            ..with
+        };
+        match answer(&Call::IssueWith(upper(), Capability::root(), recording)) {
+            Reply::ResolvedTraced(repr, _, events) => {
+                assert_eq!(repr.bytes, b"HI");
+                assert!(
+                    events.iter().any(|e| e.target == "urn:iki:fn:toUpper"),
+                    "the recorded spans name the resolution: {events:?}"
+                );
+            }
+            other => panic!("a recording IssueWith answers ResolvedTraced: {other:?}"),
+        }
+
+        // A gated target under a capability that does not cover it (a fetch with no
+        // `urn:cap:net:*` grant, refused by the ACL before any transport runs) is a typed
+        // denial, the same one as without the context. `toUpper` would not do here: it
+        // requires nothing, so an empty scope resolves it.
+        let fetch = || {
+            Request::new(Verb::Source, Iri::parse("urn:http:get").unwrap())
+                .with_arg("url", ArgRef::Inline(b"http://127.0.0.1:9/never".to_vec()))
+        };
+        let none = Capability::scoped(Vec::<String>::new());
+        let refused = answer(&Call::IssueWith(fetch(), none.clone(), with));
+        let legacy = answer(&Call::IssueAs(fetch(), none));
+        assert!(
+            matches!(refused, Reply::ErrorTyped(WireError::Denied(_))),
+            "{refused:?}"
+        );
+        assert_eq!(refused, legacy);
     }
 
     #[tokio::test]
