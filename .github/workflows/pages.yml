@@ -62,11 +62,16 @@ concurrency:
 # subset-validator overdue cap, ledger #1510). Each is the commit its crates.io
 # .cargo_vcs_info.json names.
 #
+# All three then moved with the native lock onto ikigai-core 0.2 (the streams release, ledger
+# #2261, #2363): xslt 0.4.0, jsonld 0.3.0, shacl 0.5.0, each the commit its crates.io
+# .cargo_vcs_info.json names (and its vX.Y.Z tag). xslt 0.4.0 requires xrust 2.3.0, which the
+# native lock holds, so the --precise step below pins 2.3.0; 0.2.2's `<2.3` cap could not take it.
+#
 # To bump: replace the SHA, push, and let `smoke` vet the result. That is what it is for.
 env:
-  XSLT_REV: d843d323e09aca371cc2a5f12fd1ffdf79aa7327    # ikigai-xslt 0.2.2 (xslt PR #28, release-0.2)
-  JSONLD_REV: 6b5f944f7a78aca81bc7381f58ad4acc0851b920  # ikigai-jsonld 0.2.3 (jsonld PR #17)
-  SHACL_REV: 99e3025ddf8493a2784b3691b2b8b53fb0df6b25   # ikigai-shacl 0.3.7 (shacl PR #36)
+  XSLT_REV: 83d7bbc5ed5c54277f04dd0495a309580ccf24ea    # ikigai-xslt 0.4.0 (tag v0.4.0)
+  JSONLD_REV: 74158d330e3c0c5b407f4053f943979c62927cdb  # ikigai-jsonld 0.3.0 (tag v0.3.0)
+  SHACL_REV: 64f3289789dae07d51bf030be51a1a823e326184   # ikigai-shacl 0.5.0 (tag v0.5.0)
 
 jobs:
   build:
