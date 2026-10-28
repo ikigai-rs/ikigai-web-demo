@@ -1157,6 +1157,11 @@ pub fn build_kernel_with_transport(
     // renders: Lisp absent AND named survivors present — the second half being the part a
     // "hid everything" regression would fail.
     ikigai_runbook::hide_tab("lisp");
+    // Withdraw the Bytes tab (new in ikigai-runbook 0.3.0) for the same reason: its steps
+    // run `urn:compress:gzip` and `urn:decompress:gzip`, and this kernel links no
+    // `ikigai-compress`, so every step would answer `no endpoint resolved`. It stays bound as
+    // `urn:runbook:bytes`, like Lisp.
+    ikigai_runbook::hide_tab("bytes");
     // The reusable functions come from the linked `ikigai-fn` module crate
     // (compiled to wasm32 alongside this lib); this host chains its own page
     // shapes, the in-page terminal mount, the greeter, and `urn:host:info`.
@@ -1564,7 +1569,7 @@ async fn browser_fetch(
     Ok(ikigai_http::HttpResponse {
         status,
         headers,
-        body,
+        body: body.into(),
     })
 }
 

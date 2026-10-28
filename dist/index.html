@@ -257,8 +257,35 @@ function runKernel(cmd, target, swapStyle) {
     } else {
       target.innerHTML = r.text;
       htmx.process(target); // wire the hx-* on the freshly swapped-in tabs/steps
+      runKernelScripts(target);
     }
   });
+}
+// `innerHTML` never runs a <script>, and a `/k/` src would miss the kernel anyway: the
+// adapter below intercepts htmx's requests, not the browser's. So a script the kernel's
+// HTML loads by `/k/` command is resolved here, once per command, and run inline.
+// ikigai-runbook 0.3 loads its tab strip's keys this way (`urn:runbook:script`): the
+// strip is a roving tabindex, so without it only the selected tab is reachable by keyboard.
+const kernelScripts = new Set();
+function runKernelScripts(root) {
+  for (const tag of root.querySelectorAll('script[src*="/k/"]')) {
+    const src = tag.getAttribute('src');
+    tag.remove();
+    const cmd = decodeURIComponent(src.slice(src.indexOf('/k/') + 3));
+    if (kernelScripts.has(cmd)) continue;
+    kernelScripts.add(cmd);
+    evalLineAsync(cmd).then((res) => {
+      const r = JSON.parse(res);
+      if (r.kind !== 'output') {
+        kernelScripts.delete(cmd);
+        console.error('kernel script `' + cmd + '`: ' + r.text);
+        return;
+      }
+      const script = document.createElement('script');
+      script.textContent = r.text;
+      document.head.appendChild(script);
+    });
+  }
 }
 document.body.addEventListener('htmx:beforeRequest', (evt) => {
   const path = evt.detail.requestConfig && evt.detail.requestConfig.path;
