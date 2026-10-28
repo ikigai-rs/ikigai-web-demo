@@ -73,7 +73,7 @@ file's review; none of it gates a merge or a deploy.
 
 | Check | Version | What it covers | What it does not cover |
 |---|---|---|---|
-| `smoke/demo.spec.js` (`pages.yml`, every pull request and push to main) | `@playwright/test` 1.62.1, the runner's Chromium | The page composes; the Control cards fill and a timed job completes; the tab strip; the passkey branches; the alias window; the SHACL engines agree | No accessibility rule |
+| `smoke/demo.spec.js` (`pages.yml`, every pull request and push to main) | `@playwright/test` 1.62.1, the runner's Chromium | The page composes; the Control cards fill and a timed job completes; the tab strip, and its arrow keys, Home and End; the passkey branches; the alias window; the SHACL engines agree | No accessibility rule |
 | axe-core in Chrome over the published page (one-off) | axe-core 4.10.3, playwright-core 1.63.0, Google Chrome 153.0.8010.54 | Home (before and after a terminal command), Catalog, Control, Demo, and each of the 13 runbook tabs with its first step run (Identity's step not run), at 1280 and 320 CSS px; `net.html` before connecting. Rules axe tags WCAG 2.0/2.1/2.2 A and AA, plus best-practice rules as advisories | The passkey ceremony, a signed-in state, any runbook step beyond the first, `?shacl=js`, `net.html` connected; a dark scheme (the page has none) |
 | Keyboard probe in the same Chrome (one-off) | as above | Tab order on Home; Enter on a view button, a runbook tab and a runbook step; the terminal input's focus style | Every other control; arrow keys in the tab strip |
 | Horizontal scroll at 320 CSS px (same run) | as above | Whether any view scrolls sideways at 320 px, and what overflows | Zoom to 400% in a desktop window, text spacing |
@@ -116,6 +116,7 @@ tried in a forced-colors (high contrast) mode.
 | At 320 px the Control view scrolls sideways by 459 px (its readouts and headings) and the Catalog by 169 px (a card's list of output types) (SC 1.4.10) | Control, Catalog | Two-way scrolling on a narrow screen | none |
 | Headings skip a level: an `h3` under the `h1` (axe `heading-order`, advisory); the about box is an `<aside>` inside `<main>` (advisory) | Home, Catalog | A heading list reads out of order | none needed |
 | `net.html`'s server URL field has no label (axe `label`, critical); the page has no `<h1>` and no landmarks (advisory) | `net.html` | A screen reader announces an unnamed field | Its value names a URL |
+| The runbook's status line (`#rb-status`, new in `ikigai-runbook` 0.3.0) stays empty: the runbook's script fills it on `htmx:afterRequest`, which never fires here because the page cancels htmx's request and resolves it through the kernel (measured in headless Chromium, 2026-10-27) | the runbook | A screen reader is not told that a step ran | Read the output pane |
 | Nothing works without JavaScript and WebAssembly: the page shows "…" and no message | every view | No content at all without them | none |
 | No assistive-technology testing at all, and no accessibility check in CI | everything | Unknown; a regression would not be caught | Report what you meet (below) |
 
@@ -208,7 +209,8 @@ added, after a reported barrier is fixed, and before any conformance claim.
 | 2026-06-29 | The Control view's pulsing badge and refresh sweep stop under `prefers-reduced-motion` | PR #40 |
 | 2026-06-30 | The nav clock's blinking colon stops under `prefers-reduced-motion` | PR #42 |
 | 2026-09-03 | The passkey recovery link is underlined inside its hint, so it is not told apart by color alone | PR #52 |
-| 2026-10-15 | This file, with the first axe run and its findings | this pull request |
+| 2026-10-15 | This file, with the first axe run and its findings | PR #74 |
+| 2026-10-27 | `ikigai-runbook` 0.3.0: its tab strip is a roving tabindex driven by a script the page now resolves through the kernel (`runKernelScripts`), so the arrow keys, Home and End reach every tab; its Bytes tab is hidden (this kernel cannot serve it); its status line is listed above as not working here | this pull request; smoke `the runbook tab strip moves focus…` |
 
 ## References
 

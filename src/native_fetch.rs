@@ -91,7 +91,7 @@ impl HttpTransport for NativeFetchTransport {
         Ok(HttpResponse {
             status,
             headers,
-            body,
+            body: body.into(),
         })
     }
 }

@@ -179,8 +179,9 @@ test('the Demo tab strip withdraws Lisp and keeps the tabs this kernel serves', 
   const strip = page.locator('#runbook nav.rb-tabs');
   await expect(strip.getByRole('tab', { name: 'Basics', exact: true })).toBeVisible();
 
-  // Gone.
+  // Gone: Lisp, and Bytes (runbook 0.3.0's gzip tab; this kernel links no urn:compress:*).
   await expect(strip.getByRole('tab', { name: 'Lisp', exact: true })).toHaveCount(0);
+  await expect(strip.getByRole('tab', { name: 'Bytes', exact: true })).toHaveCount(0);
 
   // Still here: two built-ins, plus both tabs this host adds itself — `hide_tab` and
   // `add_tab` write to the same strip, so a mistake in one is visible in the other.
@@ -190,6 +191,45 @@ test('the Demo tab strip withdraws Lisp and keeps the tabs this kernel serves', 
 
   // A blunt floor under "hid everything": the strip is still the full walkthrough set.
   expect(await strip.getByRole('tab').count()).toBeGreaterThanOrEqual(12);
+
+  expect(unexpected, `unexpected page errors:\n${unexpected.join('\n')}`).toEqual([]);
+});
+
+// ---------------------------------------------------------------------------
+// The runbook tab strip is reachable by keyboard.
+//
+// Since ikigai-runbook 0.3.0 the strip is a roving tabindex: only the selected tab is a Tab
+// stop, and the arrow keys, Home and End move along the rest through a script the page
+// loads as `<script src="/k/source urn:runbook:script">`. This page swaps runbook HTML in
+// with `innerHTML`, which never runs a script, so `runKernelScripts` in index.html resolves
+// that command through the kernel and runs it. Without it only Basics was reachable from the
+// keyboard: measured in headless Chromium against main's index.html with runbook 0.3.0, the
+// arrow keys left focus where it was.
+test('the runbook tab strip moves focus with the arrow keys, Home and End', async ({ page }) => {
+  /** @type {string[]} */ const unexpected = [];
+  page.on('pageerror', (err) => unexpected.push(`pageerror: ${err.message}`));
+
+  await page.goto('/index.html');
+  const toolbar = page.locator('nav.ik-toolbar');
+  await expect(toolbar).toBeVisible();
+  await toolbar.getByRole('button', { name: 'Demo', exact: true }).click();
+
+  const strip = page.locator('#runbook nav.rb-tabs');
+  const basics = strip.getByRole('tab', { name: 'Basics', exact: true });
+  await expect(basics).toBeVisible();
+  // The script tag was consumed, and the script it named ran.
+  await expect(page.locator('#runbook script')).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => window.ikigaiRunbook === true)).toBe(true);
+
+  await basics.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(strip.getByRole('tab', { name: 'Piping', exact: true })).toBeFocused();
+  await page.keyboard.press('End');
+  await expect(strip.getByRole('tab').last()).toBeFocused();
+  await page.keyboard.press('Home');
+  await expect(basics).toBeFocused();
+  await page.keyboard.press('ArrowLeft');
+  await expect(strip.getByRole('tab').last()).toBeFocused();
 
   expect(unexpected, `unexpected page errors:\n${unexpected.join('\n')}`).toEqual([]);
 });

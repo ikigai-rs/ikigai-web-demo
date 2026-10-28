@@ -42,8 +42,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use ikigai_core::{
-    ArgRef, Capability, Error, Iri, Kernel, Request, TraceEvent, Tracer, Verb, DENIED_NOTE,
-    FAILED_NOTE,
+    ArgRef, Capability, Error, Iri, Kernel, Request, TraceEvent, Tracer, Verb, DEFAULTED_NOTE,
+    DENIED_NOTE, FAILED_NOTE,
 };
 use ikigai_engine::{Action, Engine};
 use ikigai_web_demo::{build_kernel_in, define_cap_profiles};
@@ -196,9 +196,15 @@ fn an_identity_step_outside_the_segment_is_denied_and_never_reaches_the_disk() {
     );
     let refusal = &after[before];
     assert_eq!(refusal.target, "urn:file:someone-else/secret.txt");
+    // Exactly these two: the module's refusal, and core's record that it filled the
+    // Sink's `encoding` from the default ikigai-fs declares for it (utf-8, declared since
+    // the 0.2 line; the step names no encoding). The floor's DENIED_NOTE is not among them.
     assert_eq!(
         refusal.notes,
-        vec![(FAILED_NOTE.to_string(), "denied".to_string())],
+        vec![
+            (FAILED_NOTE.to_string(), "denied".to_string()),
+            (DEFAULTED_NOTE.to_string(), "encoding".to_string()),
+        ],
         "refused by the module inside invoke, not at the floor"
     );
     assert!(
@@ -293,4 +299,32 @@ fn the_zerotrust_tab_runs_through_the_adapter_and_the_gated_write_is_refused_bef
     let elsewhere = run(&s.engine, &steps[8]).expect_err("9 · fetch elsewhere → denied");
     assert!(elsewhere.starts_with("denied:"), "{elsewhere}");
     run(&s.engine, &steps[9]).expect("10 · cap reset");
+}
+
+/// The runbook's page script, the way `dist/index.html` loads it. Since ikigai-runbook 0.3.0
+/// a page carries `<script src="/k/source urn:runbook:script">` for its tab strip's arrow
+/// keys (the strip is a roving tabindex: without the script only the selected tab is a Tab
+/// stop). `innerHTML` never runs that tag, so the page's `runKernelScripts` takes the
+/// command after `/k/`, evaluates it like a step, and runs the text it gets back. This pins
+/// both halves natively: the command the HTML names, and an output that is the script.
+#[test]
+fn the_runbook_page_script_resolves_through_the_adapter() {
+    let s = session();
+    let tab = run(&s.engine, "source urn:runbook:basics as=text/html").expect("renders");
+    let tag = "<script src=\"/k/";
+    let at = tab
+        .find(tag)
+        .expect("the page loads its script by a /k/ command")
+        + tag.len();
+    let cmd = unescape(&tab[at..at + tab[at..].find('"').expect("a closed attribute")]);
+    assert_eq!(cmd, "source urn:runbook:script");
+    assert!(
+        tab.contains("data-rb-keys=\"tabs\""),
+        "the strip the script drives"
+    );
+    let script = run(&s.engine, &cmd).expect("the script resolves as an output");
+    assert!(
+        script.contains("ArrowRight") && script.contains("data-rb-keys"),
+        "{script}"
+    );
 }

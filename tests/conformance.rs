@@ -101,6 +101,9 @@ const INHERITED: &[&str] = &[
     "split",
     "greet",
     "echo",
+    // `urn:iki:fn:each`, new in the ikigai-fn line this host crossed to reach core 0.2
+    // (0.4.1 to 0.7.0, ledger #2261): bound beside the others, asked by nothing in the page.
+    "each",
     // ikigai-fs
     "file",
     // ikigai-http
@@ -140,6 +143,13 @@ const INHERITED: &[&str] = &[
     "runbook-selection",
     "runbook-shacl",
     "runbook-lisp",
+    // Both new in ikigai-runbook 0.3.0 (the core 0.2 line, ledger #2261). `runbook-bytes` is
+    // the gzip tab; this kernel links no `urn:compress:*`, so `src/lib.rs` hides its tab as
+    // it hides Lisp's, and it stays bound and resolvable by name. `runbook-script` is the
+    // page script the runbook's HTML loads (`<script src="/k/source urn:runbook:script">`):
+    // the tab strip's arrow keys, which `dist/index.html` resolves through the kernel.
+    "runbook-bytes",
+    "runbook-script",
     "ik-context",
     "alignment",
     "data-account-shape",
@@ -227,12 +237,10 @@ fn suite() -> Suite {
         .cacheable("about")
         .pure("catalog-cards-xsl")
         .cacheable("catalog-cards-xsl")
-        // FAILURES (ikigai-conformance 0.10, opt-in until 0.11 makes it the default; ledger
-        // #1546): an action that states its failure classes fails only with one it admits.
-        // None of this host's own actions states any yet, so each is listed on a `failures:`
-        // line and nothing is a finding; opting in now is what makes the first declaration
-        // checked rather than decorative.
-        .check_failures()
+    // FAILURES (ledger #1546) and DATATYPES run by default since ikigai-conformance 0.11,
+    // so the `.check_failures()` opt-in 0.10 needed is gone; [`conforms`] still holds every
+    // check to running. None of this host's own actions states failure classes yet, so each
+    // is listed on a `failures:` line and nothing is a finding.
 }
 
 fn sorted(ids: &[impl AsRef<str>]) -> BTreeSet<String> {
