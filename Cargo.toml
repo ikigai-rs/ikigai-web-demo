@@ -161,7 +161,7 @@ ikigai-module = "0.5.1"  # the published head on core 0.2 (ledger #2261); the th
 # Outbound HTTP-client module (urn:http:get…). Already async + executor-agnostic
 # (HttpTransport seam), so the browser supplies a `fetch`-backed transport — same
 # module the native CLI drives with ureq. Unchanged for M2, so straight from crates.io.
-ikigai-http = "0.4.0"  # A CEILING crossing onto core 0.2 (ledger #2261): `HttpResponse::body` is an
+ikigai-http = "0.5.0"  # A CEILING crossing onto core 0.2 (ledger #2261): `HttpResponse::body` is an
                        # `HttpBody`, so both transports here hand over `body.into()` (the native one
                        # still refuses past MAX_BODY; the endpoint caps at 8 MiB on its own).
                        # ⚠ `^0.4.0` is also a CEILING (<0.5.0). 0.3.0 was a crossing too (ledger
