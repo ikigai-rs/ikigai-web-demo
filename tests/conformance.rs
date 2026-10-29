@@ -1,7 +1,7 @@
 //! The module recipe as one test: `ikigai-conformance` walks every endpoint the in-page
 //! kernel binds and reports every violation at once — run NATIVELY over the same
-//! [`build_kernel_in`] the browser composes. The wasm face is a build target the shared
-//! CI checks (`wasm-lib`); the suite does not run under wasm, so the three browser-only
+//! [`build_kernel_and_space_in`] the browser composes. The wasm face is a build target
+//! the shared CI checks (`wasm-lib`); the suite does not run under wasm, so the three browser-only
 //! cards this crate authors (`xslt-transform`, `jsonld-*`, `shacl-validate` for both browser
 //! engines) are typed by hand in `src/lib.rs` and never walked here — on native the same
 //! IRIs are served by the linked crates, whose cards are theirs.
@@ -57,12 +57,13 @@
 
 use std::collections::BTreeSet;
 use std::path::Path;
+use std::sync::Arc;
 
-use ikigai_conformance::{rdf, Suite};
+use ikigai_conformance::{rdf, Check, Suite};
 use ikigai_core::{
-    ArgRef, Capability, Error, Expiry, Iri, Kernel, Representation, Request, Result, Verb,
+    ArgRef, Capability, Error, Expiry, Iri, Kernel, Representation, Request, Result, Space, Verb,
 };
-use ikigai_web_demo::build_kernel_in;
+use ikigai_web_demo::build_kernel_and_space_in;
 
 /// A file seeded in the jail; nothing in the walk may touch it.
 const SCRATCH_FILE: &str = "conformance.txt";
@@ -170,13 +171,14 @@ const INHERITED: &[&str] = &[
 struct Jail {
     dir: tempfile::TempDir,
     kernel: Kernel,
+    space: Arc<dyn Space>,
 }
 
 fn jail() -> Jail {
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::write(dir.path().join(SCRATCH_FILE), SEED).expect("seed");
-    let kernel = build_kernel_in("Embedded (conformance)", dir.path());
-    Jail { dir, kernel }
+    let (kernel, space) = build_kernel_and_space_in("Embedded (conformance)", dir.path());
+    Jail { dir, kernel, space }
 }
 
 fn iri(s: &str) -> Iri {
@@ -250,7 +252,9 @@ fn sorted(ids: &[impl AsRef<str>]) -> BTreeSet<String> {
 #[test]
 fn conforms() {
     let jail = jail();
-    let report = suite().run_blocking(&jail.kernel);
+    let report = suite()
+        .body_space(jail.space.clone())
+        .run_blocking(&jail.kernel);
     // Printed even when clean (`--nocapture`): the report is the record.
     eprintln!("{report}");
     report.assert_clean();
@@ -275,6 +279,42 @@ fn conforms() {
         0,
         "every check runs: {report}"
     );
+    // BODIES compares every deterministic Source directly. Only these time-varying
+    // or live answers cannot be compared across independent invocations. Pin both the
+    // ids and the reason so losing body_space (or future BODY-INPUTS setup) fails.
+    assert_eq!(
+        report.unprobed.len(),
+        5,
+        "only the five volatile sources are unprobed: {report}"
+    );
+    assert_eq!(
+        sorted(
+            &report
+                .unprobed
+                .iter()
+                .map(|u| &u.endpoint)
+                .collect::<Vec<_>>()
+        ),
+        sorted(&[
+            "clock-now",
+            "host-info",
+            "host-identity",
+            "runbook-identity",
+            "runbook-timer",
+        ]),
+        "every deterministic source is probed: {report}"
+    );
+    for unprobed in report.unprobed.iter() {
+        assert_eq!(unprobed.check, Check::Bodies, "{report}");
+        assert_eq!(unprobed.verb, Verb::Source, "{report}");
+        assert_eq!(
+            unprobed.reason,
+            "uncacheable, time-varying, or volatile answer: independent calls cannot establish method agreement (Suite::live, expiry or CACHEABLE's byte comparison)",
+            "{report}"
+        );
+    }
+    // No own argument declares reads_body, so BODY-INPUTS has no inputs to compare.
+    // A new declaration needing a shared content store will fail the unprobed guard.
     // Nothing the walk fired reached the file module: it is inherited, not walked.
     assert_eq!(
         std::fs::read_to_string(jail.dir.path().join(SCRATCH_FILE)).expect("scratch"),

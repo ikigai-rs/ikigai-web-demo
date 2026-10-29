@@ -1141,6 +1141,23 @@ pub fn build_kernel_with_transport(
     file_root: impl Into<std::path::PathBuf>,
     transport: Arc<dyn ikigai_http::HttpTransport>,
 ) -> Kernel {
+    build_kernel_and_space_with_transport(nature, file_root, transport).0
+}
+
+/// [`build_kernel_in`], also returning the shared root space for direct endpoint probes.
+/// Both handles refer to the same bindings, including the host's composed modules.
+pub fn build_kernel_and_space_in(
+    nature: &'static str,
+    file_root: impl Into<std::path::PathBuf>,
+) -> (Kernel, Arc<dyn Space>) {
+    build_kernel_and_space_with_transport(nature, file_root, default_transport())
+}
+
+fn build_kernel_and_space_with_transport(
+    nature: &'static str,
+    file_root: impl Into<std::path::PathBuf>,
+    transport: Arc<dyn ikigai_http::HttpTransport>,
+) -> (Kernel, Arc<dyn Space>) {
     // Register the browser-only Identity tab so the shared runbook strip lists it
     // (idempotent). Its panel is `urn:runbook:identity`, bound below.
     ikigai_runbook::add_tab("identity", "Identity");
@@ -1306,11 +1323,12 @@ pub fn build_kernel_with_transport(
     // Fold the runbook's RDFS alignment graph (foaf:Person ⊑ schema:Person) into the
     // kernel's subclass closure, so type-aware action selection (urn:kernel:actions) reasons
     // over the hierarchy — a foaf:Person entity satisfies a schema:Person action.
-    Kernel::with_meta_renderer(root, Arc::new(JsonOrTurtle))
+    let kernel = Kernel::with_meta_renderer(root.clone(), Arc::new(JsonOrTurtle))
         .with_clock(host_clock())
         .with_subclass_axioms(ikigai_rdf::subclass_axioms(ikigai_runbook::ALIGNMENT_TTL))
         // The transition window for `ikigai-fn`'s namespace move. See `alias_table`.
-        .with_aliases(Arc::new(alias_table()))
+        .with_aliases(Arc::new(alias_table()));
+    (kernel, root)
 }
 
 /// The logical-rewrite table this host installs: `urn:fn:` → `urn:iki:fn:`.
