@@ -324,8 +324,9 @@ web-sys = { version = "0.3", features = [
 # with one it admits), opt-in through `Suite::check_failures()` until 0.11 makes it the default;
 # the walk opted in. 0.11.0 is on core 0.2 (ledger #2261) and runs FAILURES and DATATYPES by
 # default; the walk is clean under both (no own action states failure classes, and no own RDF
-# face writes a bare literal against a narrower ik: range). ⚠ `^0.11.0` is a CEILING (<0.12.0).
-ikigai-conformance = "0.11.0"
+# face writes a bare literal against a narrower ik: range). 0.12.0 adds BODIES and
+# BODY-INPUTS by default; the walk shares the kernel root for direct body probes.
+ikigai-conformance = "0.12.0"
 # A scratch jail for the file module: the walk FIRES Sink/Delete, and the native
 # backend is std::fs, so the fixture must never be this repo's tree.
 tempfile = "3"
