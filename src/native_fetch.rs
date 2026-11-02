@@ -20,9 +20,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use ikigai_http::{HttpRequest, HttpResponse, HttpTransport, Method};
 
-/// The largest response body accepted. A larger one is REFUSED, not truncated: a cut-off
-/// body would reach a caller as if it were the resource.
-pub const MAX_BODY: u64 = 16 * 1024 * 1024;
+use crate::MAX_BODY;
 
 /// A blocking `ureq` transport that never follows a redirect.
 pub struct NativeFetchTransport {
