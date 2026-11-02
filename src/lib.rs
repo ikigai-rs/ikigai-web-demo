@@ -26,7 +26,11 @@ use wasm_bindgen::prelude::*;
 #[cfg(not(target_family = "wasm"))]
 mod native_fetch;
 #[cfg(not(target_family = "wasm"))]
-pub use native_fetch::{NativeFetchTransport, MAX_BODY};
+pub use native_fetch::NativeFetchTransport;
+
+/// The largest response body accepted by either HTTP transport. Larger bodies are
+/// refused rather than truncated, so partial resources never reach callers.
+pub const MAX_BODY: u64 = 16 * 1024 * 1024;
 
 /// An XSD datatype IRI for a scalar input's `class` — the manifold's answer to "what
 /// shape is this argument", which `urn:kernel:validate` checks before a call and the
@@ -1579,16 +1583,66 @@ async fn browser_fetch(
         headers.push(("cache-control".to_string(), cc));
     }
 
-    let buffer = wasm_bindgen_futures::JsFuture::from(resp.array_buffer().map_err(jserr)?)
-        .await
-        .map_err(jserr)?;
-    let body = js_sys::Uint8Array::new(&buffer).to_vec();
+    let body = browser_response_body(&resp, &request.url).await?;
 
     Ok(ikigai_http::HttpResponse {
         status,
         headers,
         body: body.into(),
     })
+}
+
+/// Collect only within the transport budget, checking each JS chunk before copying
+/// it into wasm memory. Content-Length is neither required nor trusted.
+#[cfg(target_family = "wasm")]
+async fn browser_response_body(
+    response: &web_sys::Response,
+    url: &str,
+) -> std::result::Result<Vec<u8>, String> {
+    use wasm_bindgen::JsCast;
+    use wasm_bindgen_futures::JsFuture;
+
+    let Some(stream) = response.body() else {
+        return Ok(Vec::new());
+    };
+    let reader: web_sys::ReadableStreamDefaultReader = stream.get_reader().unchecked_into();
+    let result = async {
+        let mut body = Vec::new();
+        loop {
+            let item = JsFuture::from(reader.read())
+                .await
+                .map_err(|e| format!("reading the response body: {e:?}"))?;
+            let done = js_sys::Reflect::get(&item, &JsValue::from_str("done"))
+                .map_err(|e| format!("reading stream completion: {e:?}"))?;
+            if done.as_bool() == Some(true) {
+                return Ok(body);
+            }
+            let chunk = js_sys::Reflect::get(&item, &JsValue::from_str("value"))
+                .map_err(|e| format!("reading stream chunk: {e:?}"))?
+                .dyn_into::<js_sys::Uint8Array>()
+                .map_err(|_| "response stream returned a non-byte chunk".to_string())?;
+            let len = chunk.length() as usize;
+            if len as u64 > MAX_BODY - body.len() as u64 {
+                return Err(format!(
+                    "the response body from {url} exceeds {MAX_BODY} bytes"
+                ));
+            }
+            let start = body.len();
+            body.resize(start + len, 0);
+            chunk.copy_to(&mut body[start..]);
+        }
+    }
+    .await;
+    if result.is_err() {
+        // Cancel immediately, but do not delay the refusal on peer cleanup. Consume
+        // any rejected cancellation promise rather than leaking an unhandled rejection.
+        let cancellation = reader.cancel();
+        wasm_bindgen_futures::spawn_local(async move {
+            let _ = JsFuture::from(cancellation).await;
+        });
+    }
+    reader.release_lock();
+    result
 }
 
 // Closures backing live `setInterval`/`setTimeout` timers, kept alive while their
