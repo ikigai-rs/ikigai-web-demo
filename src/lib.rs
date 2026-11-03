@@ -272,19 +272,19 @@ const CONTROL_CARDS_HTML: &str = r##"
   <h2 class="ctl-title">Scheduler</h2>
   <p class="ctl-note">The host work backend and its live task counts —
      <code>source urn:kernel:scheduler</code>.</p>
-  <pre class="ctl-readout">$a{urn:kernel:scheduler}</pre>
+  <pre class="ctl-readout" tabindex="0" role="region" aria-label="Scheduler readout">$a{urn:kernel:scheduler}</pre>
 </section>
 <section class="ctl-card ctl-card-cache">
   <h2 class="ctl-title">Cache</h2>
   <p class="ctl-note">The golden-thread cache — <code>source urn:kernel:cache</code>. Each
      entry: the IRI, its representation type and size, and the golden threads it depends on.</p>
-  <pre class="ctl-readout">$a{urn:kernel:cache}</pre>
+  <pre class="ctl-readout" tabindex="0" role="region" aria-label="Cache readout">$a{urn:kernel:cache}</pre>
 </section>
 <section class="ctl-card ctl-card-time">
   <h2 class="ctl-title">Time jobs</h2>
   <p class="ctl-note">The time transport's timed jobs —
      <code>source urn:time:jobs</code>. A job fires a resource-request on a timer.</p>
-  <pre class="ctl-readout">$a{urn:time:jobs}</pre>
+  <pre class="ctl-readout" tabindex="0" role="region" aria-label="Time jobs readout">$a{urn:time:jobs}</pre>
 </section>
 "##;
 
@@ -302,12 +302,12 @@ const CATALOG_CARDS_XSL: &str = r#"<xsl:stylesheet version="1.0"
   <xsl:template match="ik:Endpoint | ik:Transreptor">
     <article class="card">
       <div class="card-head">
-        <h3 class="card-title">
+        <h2 class="card-title">
           <xsl:choose>
             <xsl:when test="ik:title"><xsl:value-of select="ik:title"/></xsl:when>
             <xsl:otherwise><xsl:value-of select="ik:id"/></xsl:otherwise>
           </xsl:choose>
-        </h3>
+        </h2>
         <code class="card-id"><xsl:value-of select="ik:id"/></code>
         <xsl:if test="ik:transreptsTo"><span class="card-kind">transreptor</span></xsl:if>
       </div>
@@ -333,8 +333,8 @@ const CATALOG_CARDS_XSL: &str = r#"<xsl:stylesheet version="1.0"
 
 /// `urn:data:about` — a nested shape the page transcludes, which itself transcludes
 /// another resource. Proof that composition recurses.
-const ABOUT_HTML: &str = r#"<aside class="about">
-  <h3>Composition recurses</h3>
+const ABOUT_HTML: &str = r#"<section class="about">
+  <h2>Composition recurses</h2>
   <p>This box is a separate resource (<code>urn:data:about</code>) the page pulled in — and
      it pulled in another:
      <b>$a{urn:iki:fn:toUpper?in="even this nested shape was composed"}</b>.</p>
@@ -346,12 +346,12 @@ const ABOUT_HTML: &str = r#"<aside class="about">
      new name, so anything that discovers resources by reading it migrates itself;
      <code>source urn:kernel:aliases</code> shows the rule and how many names have come
      through it.</p>
-</aside>"#;
+</section>"#;
 
 /// `urn:demo:web-cli` — the terminal mount. Transcluded into the page; the
 /// `<ikigai-cli>` custom element self-wires on insertion and drives the exported `evalLine`.
 const WEB_CLI_HTML: &str = r#"<section class="cli-mount">
-  <h3>The same CLI, in your browser</h3>
+  <h2>The same CLI, in your browser</h2>
   <p class="sub">This terminal runs the very same renderer-agnostic Engine as the desktop
      <code>ikigai</code> REPL, on this page's kernel — pipelines <code>|</code>, map
      <code>..</code>, fork <code>( a ; b )</code>, named <code>key=value</code> args, plus
@@ -526,7 +526,9 @@ fn runbook_identity() -> FnEndpoint {
             None => String::new(),
         };
         let body = format!(
-            "{strip}<section class=\"rb-panel\" role=\"tabpanel\">\
+            "{strip}<section id=\"rb-panel\" class=\"rb-panel\" role=\"tabpanel\" \
+             aria-labelledby=\"rb-tab-identity\" tabindex=\"0\">\
+             <h2>Identity</h2>\
              <p class=\"rb-intro\">A passkey establishes a client <b>identity</b> that scopes a \
              private workspace segment (<code>ws/&lt;id&gt;</code>) to you: while signed in, files \
              resolve under — and are confined to — your segment, and another identity's segment is \
@@ -561,7 +563,9 @@ fn runbook_identity() -> FnEndpoint {
 fn runbook_timer() -> FnEndpoint {
     FnEndpoint::new("runbook-timer", move |_inv: &Invocation<'_>| {
         let body = format!(
-            "{strip}<section class=\"rb-panel\" role=\"tabpanel\">\
+            "{strip}<section id=\"rb-panel\" class=\"rb-panel\" role=\"tabpanel\" \
+             aria-labelledby=\"rb-tab-timer\" tabindex=\"0\">\
+             <h2>Timer</h2>\
              <p class=\"rb-intro\">The <b>time transport</b> fires a resource-request on a timer. \
              Start a one-second job that sources <code>urn:demo:greeter</code> on every tick, then \
              switch to the <b>Control</b> panel and watch it tick live in the <i>Time jobs</i> card. \

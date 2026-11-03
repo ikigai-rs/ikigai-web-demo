@@ -17,21 +17,10 @@ const { test, expect } = require('@playwright/test');
 
 // Load-time console noise we tolerate, deliberately and narrowly.
 //
-// The nav clock is `hx-trigger="load, every 1s"` inside the composed page, and
-// index.html calls `htmx.process(app)` — which fires that `load` trigger synchronously —
-// a few statements BEFORE it installs the `htmx:beforeRequest` listener that resolves
-// `/k/...` through the kernel instead of over the network. Exactly one tick escapes
-// through that gap and 404s. There are no awaits between the two, so it is one tick on a
-// fast machine and one tick on a slow one; the deployed site shows the same.
-//
-// That ONE escaped request is logged TWICE, by two different reporters:
-//   1. htmx's own error   — "Response Status Error Code 404 from /k/source urn:time:now
-//                            html=true", attributed to htmx.org on unpkg;
-//   2. the browser's      — "Failed to load resource: ... 404 (Not Found)", attributed to
-//                            the /k/... URL itself.
-// Hence a ceiling of two lines. This is a pre-existing wart in the page's bootstrap
-// ordering and not this gate's business to fix — but the COUNT is its business: if it
-// grows, the fetch interception has stopped intercepting, which is a real regression.
+// Before the accessibility fix, the nav clock's first load request escaped because
+// htmx.process(app) ran before the local adapter was installed. The bootstrap now runs
+// after adapter setup. Keep this narrow ceiling for historical artifacts; no new error
+// or unrelated 404 is allowed by it.
 const KNOWN_404 = [
   /Response Status Error Code 404 from \/k\/source urn:time:now html=true/,
   /Failed to load resource.*404/,
@@ -435,9 +424,9 @@ test('the old urn:fn: names still resolve, through the host alias table', async 
   // `urn:data:page` transcludes `urn:data:about`, which transcludes `$a{urn:fn:toUpper}`.
   // Seeing the uppercased text means the rewrite happened inside a nested resolution, on
   // the ordinary render path, with nothing in this test driving it.
-  await expect(page.locator('aside.about')).toContainText('THE OLD NAME STILL RESOLVES');
+  await expect(page.locator('section.about')).toContainText('THE OLD NAME STILL RESOLVES');
   // The new name, in the same box — both spellings reach the same endpoint.
-  await expect(page.locator('aside.about')).toContainText('EVEN THIS NESTED SHAPE WAS COMPOSED');
+  await expect(page.locator('section.about')).toContainText('EVEN THIS NESTED SHAPE WAS COMPOSED');
 
   // --- The table is installed, and says so ---------------------------------
   const aliases = await runLine(page, 'source urn:kernel:aliases');

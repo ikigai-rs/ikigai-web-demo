@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>A page assembled by ikigai</title>
 <style>
+  :focus-visible { outline: 3px solid #1f7199; outline-offset: 3px; }
+  .cli-input:focus-visible, .cli-transcript:focus-visible, .ctl-readout:focus-visible { outline-color: #6cb6ff; }
+  body { overflow-wrap: anywhere; }
   html { background: #fff; }
   body { font: 17px/1.7 -apple-system, system-ui, sans-serif; max-width: 860px; margin: 44px auto; padding: 0 22px; color: #1a1a1a; background: #fff; }
   h1 { color: #1f7199; font-size: 28px; margin-bottom: 2px; }
@@ -12,25 +15,25 @@
   article { border: 1px solid #dfe2e5; border-radius: 10px; padding: 4px 18px 16px; margin: 18px 0; }
   code { color: #7a3e9d; font: 14px ui-monospace, Menlo, monospace; }
   b { background: #eef7ee; border-radius: 4px; padding: 0 4px; font-weight: 600; }
-  h3 { font-size: 17px; color: #444; margin-top: 4px; }
-  aside.about { border-left: 3px solid #1f7199; background: #f6f9fb; border-radius: 6px; padding: 2px 16px 12px; margin: 16px 0; }
+  .about h2, .cli-mount h2 { font-size: 17px; color: #444; margin-top: 4px; }
+  .about { border-left: 3px solid #1f7199; background: #f6f9fb; border-radius: 6px; padding: 2px 16px 12px; margin: 16px 0; }
   .literal { color: #555; }
   .literal b { background: none; padding: 0; }
 
   /* The in-page terminal — the CLI Engine running on this page's kernel. */
   .cli-mount { margin-top: 30px; }
-  .cli-mount h3 { color: #1f7199; }
+  .cli-mount h2 { color: #1f7199; }
   ikigai-cli { display: block; background: #0f1419; border-radius: 10px; padding: 12px 14px; font: 13.5px/1.55 ui-monospace, Menlo, monospace; color: #d7dde3; }
   .cli-transcript { max-height: 320px; overflow-y: auto; }
   .cli-line { margin: 0; white-space: pre-wrap; word-break: break-word; font: inherit; }
   .cli-echo { color: #6cb6ff; }
   .cli-error { color: #ff8a8a; }
   .cli-help { color: #aab2bb; }
-  .cli-cache { color: #65727f; font-style: italic; margin-bottom: 7px; }
-  .cli-hint { color: #65727f; }
+  .cli-cache { color: #8b98a5; font-style: italic; margin-bottom: 7px; }
+  .cli-hint { color: #8b98a5; }
   .cli-inputline { display: flex; align-items: baseline; gap: 7px; margin-top: 5px; border-top: 1px solid #1f2730; padding-top: 8px; }
   .cli-prompt { color: #6cb6ff; }
-  .cli-input { flex: 1; background: transparent; border: 0; outline: none; color: #d7dde3; font: inherit; padding: 0; }
+  .cli-input { flex: 1; background: transparent; border: 0; min-width: 0; color: #d7dde3; font: inherit; padding: 0; }
   ikigai-cli code { color: #c39be8; }
 
   /* Interactive runbook — htmx HATEOAS tabs. Every tab/step is a urn:runbook:*
@@ -47,10 +50,10 @@
   .rb-step { background: #f3f6f9; color: #1f7199; border: 1px solid #ccd6dd; border-radius: 6px; padding: 4px 10px; font: 12.5px ui-monospace, Menlo, monospace; cursor: pointer; }
   .rb-step:hover { background: #e7eef3; border-color: #1f7199; }
   .rb-cmd { color: #7a3e9d; font: 12px ui-monospace, Menlo, monospace; margin-left: 8px; }
-  .rb-note { color: #777; font-size: 12.5px; margin-left: 8px; }
+  .rb-note { color: #666; font-size: 12.5px; margin-left: 8px; }
   .rb-out { background: #0f1419; color: #d7dde3; border-radius: 8px; padding: 10px 12px; margin-top: 12px; min-height: 1.4em; white-space: pre-wrap; font: 13px ui-monospace, Menlo, monospace; }
   .rb-outbar { display: flex; justify-content: flex-end; margin-top: 12px; }
-  .rb-clear { background: transparent; color: #777; border: 1px solid #ccd6dd; border-radius: 6px; padding: 3px 10px; font: 12px system-ui, sans-serif; cursor: pointer; }
+  .rb-clear { background: transparent; color: #666; border: 1px solid #ccd6dd; border-radius: 6px; padding: 3px 10px; font: 12px system-ui, sans-serif; cursor: pointer; }
   .rb-clear:hover { background: #f3f6f9; color: #1f7199; border-color: #1f7199; }
   /* An inline button styled as a link — cross-links from the runbook tab to a page. */
   .rb-link { background: none; border: 0; padding: 0; color: #1f7199; font: inherit; cursor: pointer; text-decoration: underline; }
@@ -64,29 +67,27 @@
   .ik-nav:hover { background: #f3f6f9; }
   .ik-nav.selected { border-bottom-color: #1f7199; font-weight: 600; }
   /* Nav clock — pushed to the far right; HH:MM from the cacheable urn:time:now,
-     polled every second but recomputed once a minute. The colon blinks per second. */
+     polled every second but recomputed once a minute. The colon stays steady. */
   .ik-clock { margin-left: auto; display: inline-flex; align-items: center; padding: 8px 2px 8px 12px;
               font: 600 14.5px/1 ui-monospace, Menlo, monospace; color: #1f7199; font-variant-numeric: tabular-nums; letter-spacing: .5px; }
-  .ik-clock-colon { animation: ik-blink 1s step-end infinite; }
-  @keyframes ik-blink { 50% { opacity: 0.2; } }
-  @media (prefers-reduced-motion: reduce) { .ik-clock-colon { animation: none; } }
+  /* A steady colon avoids unnecessary motion in the navigation. */
 
   /* Endpoint cards — the catalog RDF/XML styled by urn:xslt:transform. A responsive
      grid that collapses to one column on a phone. */
   .cards-pane { margin-top: 14px; }
-  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: 12px; }
   .card { border: 1px solid #dfe2e5; border-radius: 10px; padding: 12px 14px; background: #fff; display: flex; flex-direction: column; gap: 7px; }
   .card:hover { border-color: #1f7199; box-shadow: 0 1px 6px rgba(31,113,153,0.08); }
   .card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 6px 8px; flex-wrap: wrap; }
   .card-title { font-size: 15px; color: #1f7199; margin: 0; flex: 1 1 auto; min-width: 0; }
-  .card-id { font: 11.5px ui-monospace, Menlo, monospace; color: #7a3e9d; background: #f6f2fb; border-radius: 4px; padding: 1px 6px; white-space: nowrap; }
+  .card-id { font: 11.5px ui-monospace, Menlo, monospace; color: #7a3e9d; background: #f6f2fb; border-radius: 4px; padding: 1px 6px; white-space: normal; }
   .card-summary { margin: 0; font-size: 13px; color: #444; line-height: 1.5; flex: 1; }
   .card-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
   .card-verbs { display: flex; gap: 4px; flex-wrap: wrap; }
   .verb { font: 11px system-ui, sans-serif; color: #2e7d32; background: #eef7ee; border-radius: 4px; padding: 1px 7px; }
-  .card-out { font: 11px ui-monospace, Menlo, monospace; color: #888; }
+  .card-out { font: 11px ui-monospace, Menlo, monospace; color: #666; }
   /* Transreptor cards: a distinct kind badge + the from → to media-type matrix. */
-  .card-kind { font: 11px system-ui, sans-serif; color: #a85b00; background: #fdf1e0; border: 1px solid #f0d3a8; border-radius: 4px; padding: 1px 7px; white-space: nowrap; }
+  .card-kind { font: 11px system-ui, sans-serif; color: #a85b00; background: #fdf1e0; border: 1px solid #f0d3a8; border-radius: 4px; padding: 1px 7px; white-space: normal; }
   .card:has(.card-kind) { border-left: 3px solid #d98324; }
   .card-conv { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; font-size: 11px; }
   .conv-label { color: #a85b00; font: 600 10px system-ui, sans-serif; text-transform: uppercase; letter-spacing: .04em; }
@@ -99,41 +100,40 @@
   .ik-id-in { background: #eef7ee; border-color: #cfe6cf; }
   .ik-id-link { color: #1f7199; cursor: pointer; text-decoration: none; font-weight: 600; }
   .ik-id-link:hover { text-decoration: underline; }
-  .ik-id-hint { color: #888; font-size: 13px; }
+  .ik-id-hint { color: #666; font-size: 13px; }
   /* A link INSIDE the hint (the passkey recovery affordance) is underlined: against
-     the hint's #888 it clears AA on white on its own (5.4:1) but the two colors are
-     only 1.5:1 apart, so color alone would not distinguish it from the sentence. */
+     the surrounding text, color alone would not reliably distinguish it from the sentence. */
   .ik-id-hint .ik-id-link { text-decoration: underline; }
-  .ik-try { margin: -8px 0 18px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-  .ik-try .ik-try-label { color: #777; font-size: 13px; }
-  .ik-try button { background: #f3f6f9; color: #1f7199; border: 1px solid #ccd6dd; border-radius: 6px; padding: 4px 10px; font: 12.5px ui-monospace, Menlo, monospace; cursor: pointer; }
-  .ik-try button:hover { background: #e7eef3; border-color: #1f7199; }
 
   /* Control page — the scheduler + cache readouts, each a composed sub-request. */
   .ctl-grid { display: grid; grid-template-columns: 1fr; gap: 14px; margin-top: 16px; }
-  .ctl-card { border: 1px solid #dfe2e5; border-radius: 10px; padding: 12px 16px 14px; background: #fff; border-left: 3px solid #1f7199; }
+  .ctl-card { min-width: 0; border: 1px solid #dfe2e5; border-radius: 10px; padding: 12px 16px 14px; background: #fff; border-left: 3px solid #1f7199; }
   .ctl-card-cache { border-left-color: #d98324; }
   .ctl-card-time { border-left-color: #2f9e44; }
   .ctl-title { font-size: 16px; color: #1f7199; margin: 0 0 2px; }
   .ctl-card-cache .ctl-title { color: #a85b00; }
-  .ctl-card-time .ctl-title { color: #2b8a3e; }
-  .ctl-note { color: #777; font-size: 12.5px; margin: 0 0 8px; }
+  .ctl-card-time .ctl-title { color: #237334; }
+  .ctl-note { color: #666; font-size: 12.5px; margin: 0 0 8px; }
   .ctl-readout { background: #0f1419; color: #d7dde3; border-radius: 8px; padding: 10px 12px; margin: 0; overflow: auto; max-height: 220px; white-space: pre; font: 13px/1.5 ui-monospace, Menlo, monospace; }
   /* "live" badge in the panel title — a steadily pulsing dot says the panel auto-refreshes. */
   .ctl-live { display: inline-flex; align-items: center; gap: 6px; vertical-align: middle; margin-left: 10px;
-              font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: #2f9e44; }
+              font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: #237334; }
   .ctl-live-dot { width: 8px; height: 8px; border-radius: 50%; background: #2f9e44; animation: ctl-pulse 1s ease-in-out infinite; }
   @keyframes ctl-pulse { 0%,100% { opacity: 1; box-shadow: 0 0 0 0 rgba(47,158,68,.45); } 50% { opacity: .4; box-shadow: 0 0 0 5px rgba(47,158,68,0); } }
-  /* Each poll re-renders #ctl-cards, so the readouts replay this on every tick — a faint
-     sweep that makes the once-a-second refresh visible without being noisy. */
+  /* A brief sweep on the initial readout mount; later polls preserve the element. */
   .ctl-readout { animation: ctl-refresh .9s ease-out; }
   @keyframes ctl-refresh { 0% { box-shadow: inset 0 0 0 9999px rgba(47,158,68,.10); } 100% { box-shadow: inset 0 0 0 9999px transparent; } }
+  [data-updates-paused] .ctl-live-dot, [data-updates-paused] .ctl-readout { animation: none; }
   @media (prefers-reduced-motion: reduce) { .ctl-live-dot, .ctl-readout { animation: none; } }
 </style>
 <script src="https://unpkg.com/htmx.org@2.0.4"></script>
 </head>
 <body>
-<main id="app">…</main>
+<header><button id="pause-updates" type="button" aria-pressed="false" hidden>Pause live updates</button></header>
+<main id="app">
+  <p>This demo requires JavaScript and WebAssembly. If it does not load, check that both are available and reload the page.</p>
+  <noscript><p>JavaScript is disabled. Enable it to run the in-browser kernel and terminal.</p></noscript>
+</main>
 
 <script type="module">
 import init, { evalLineAsync, hostCall } from './ikigai_web_demo.js?v=__BUILD__';
@@ -166,7 +166,7 @@ class IkigaiCli extends HTMLElement {
     // The terminal itself stays identical to the desktop CLI — just a transcript
     // and an input line, nothing demo-specific inside the terminal chrome.
     this.innerHTML =
-      '<div class="cli-transcript"></div>' +
+      '<div class="cli-transcript" role="log" aria-label="Command transcript" tabindex="0"></div>' +
       '<div class="cli-inputline"><span class="cli-prompt">ikigai&gt;</span>' +
       '<input class="cli-input" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="ikigai command"></div>';
     this.transcript = this.querySelector('.cli-transcript');
@@ -223,17 +223,11 @@ customElements.define('ikigai-cli', IkigaiCli);
 // `?v=__BUILD__` is rewritten to the commit SHA by pages.yml at deploy time, so each
 // deploy fetches a fresh host JS + wasm instead of a 10-min-stale cached copy (the files
 // are fixed-name). Locally the placeholder is just a constant query a static server ignores.
-await init({ module_or_path: './ikigai_web_demo_bg.wasm?v=__BUILD__' });
-
-// The whole page is one resource: compose it through the Engine and inject the
-// result. The composed HTML contains <ikigai-cli>, which self-wires on insertion.
 try {
-  const app = document.getElementById('app');
-  const r = JSON.parse(await evalLineAsync('source urn:iki:fn:compose src=urn:data:page'));
-  app.innerHTML = r.kind === 'output' ? r.text : ('compose error: ' + r.text);
-  htmx.process(app); // wire the page toolbar's hx-* so inter-page nav works on first load
-} catch (e) {
-  document.getElementById('app').textContent = 'error: ' + e;
+  await init({ module_or_path: './ikigai_web_demo_bg.wasm?v=__BUILD__' });
+} catch (error) {
+  document.getElementById('app').textContent = 'The WebAssembly kernel could not load. Check that WebAssembly is enabled and reload the page. ' + error;
+  throw error;
 }
 
 // --- Runbook: htmx HATEOAS tabs over the in-page kernel --------------------
@@ -243,8 +237,44 @@ try {
 // authored by the urn:runbook:* resource — switching tabs and running steps are
 // both just "resolve a resource". (When ikigai is served over HTTP, this adapter
 // is replaced by a real server doing the same eval — htmx is unchanged.)
-function runKernel(cmd, target, swapStyle) {
+let updatesPaused = false;
+const pauseButton = document.getElementById('pause-updates');
+pauseButton.hidden = false;
+pauseButton.addEventListener('click', () => {
+  updatesPaused = !updatesPaused;
+  document.body.toggleAttribute('data-updates-paused', updatesPaused);
+  pauseButton.setAttribute('aria-pressed', String(updatesPaused));
+  pauseButton.textContent = updatesPaused ? 'Resume live updates' : 'Pause live updates';
+  document.querySelector('.ctl-live')?.replaceChildren(document.createTextNode(updatesPaused ? 'paused' : 'live'));
+});
+let pendingTab = null;
+function updateLocation(push) {
+  const view = document.querySelector('.ik-nav[aria-current]')?.textContent.trim() || 'Home';
+  const tab = view === 'Demo' ? document.querySelector('.rb-tab[aria-selected=true]') : null;
+  const tabId = tab?.getAttribute('hx-get')?.match(/urn:runbook:([a-z0-9-]+)/)?.[1];
+  const hash = '#' + view.toLowerCase() + (tabId ? '/' + tabId : '');
+  document.title = `${view}${tab ? ' · ' + tab.textContent.trim() : ''} — ikigai`;
+  if (location.hash !== hash && (push || !pendingTab)) {
+    history[push ? 'pushState' : 'replaceState'](null, '', hash);
+  }
+  if (updatesPaused) document.querySelector('.ctl-live')?.replaceChildren(document.createTextNode('paused'));
+}
+async function restoreLocation() {
+  const [view, tab] = (location.hash.slice(1) || 'home').split('/');
+  const resource = { home: 'page', catalog: 'docs', control: 'control', demo: 'demo' }[view];
+  if (!resource) return;
+  pendingTab = view === 'demo' && /^[a-z0-9-]+$/.test(tab || '') ? tab : null;
+  await runKernel(`source urn:iki:fn:compose src=urn:data:${resource}`, document.getElementById('app'), 'innerHTML');
+  document.querySelector('.ik-nav[aria-current]')?.focus();
+}
+window.addEventListener('popstate', restoreLocation);
+
+function runKernel(cmd, target, swapStyle, navigate = false) {
+  const restoreFocus = navigate || target.contains(document.activeElement);
+  const polling = target.id === 'ctl-cards' || target.id === 'ik-clock-val';
+  if (polling && updatesPaused && target.textContent) return Promise.resolve();
   return evalLineAsync(cmd).then((res) => {
+    if (!target.isConnected || (polling && updatesPaused && target.textContent)) return;
     const r = JSON.parse(res);
     // `clear` empties its target (the runbook output pane) — the same engine command
     // the terminal uses to wipe its transcript, here wired to a button.
@@ -255,9 +285,39 @@ function runKernel(cmd, target, swapStyle) {
       const tag = r.cache ? '   [' + r.cache + ']' : '';
       target.insertAdjacentText('beforeend', r.text + tag + '\n');
     } else {
+      if (target.id === 'ctl-cards' && target.children.length) {
+        // Keep focus and each readout's scroll position through live refreshes.
+        const next = document.createElement('div');
+        next.innerHTML = r.text;
+        const readouts = next.querySelectorAll('.ctl-readout');
+        target.querySelectorAll('.ctl-readout').forEach((pre, i) => {
+          if (readouts[i] && pre.textContent !== readouts[i].textContent) {
+            pre.textContent = readouts[i].textContent;
+          }
+        });
+        return;
+      }
       target.innerHTML = r.text;
       htmx.process(target); // wire the hx-* on the freshly swapped-in tabs/steps
       runKernelScripts(target);
+      if (target.id === 'app' || target.id === 'runbook') {
+        updateLocation(navigate);
+        if (restoreFocus) {
+          const selected = target.querySelector(target.id === 'app' ? '.ik-nav[aria-current]' : '.rb-tab[aria-selected=true]');
+          selected?.focus();
+        }
+        if (target.id === 'runbook' && pendingTab) {
+          const tab = pendingTab;
+          pendingTab = null;
+          const button = [...target.querySelectorAll('.rb-tab')].find(el => el.getAttribute('hx-get').includes(`urn:runbook:${tab} `));
+          if (button) {
+            return runKernel(`source urn:runbook:${tab} as=text/html`, target, 'innerHTML').then(() => {
+              target.querySelector('.rb-tab[aria-selected=true]')?.focus();
+            });
+          }
+          updateLocation(false);
+        }
+      }
     }
   });
 }
@@ -293,10 +353,24 @@ document.body.addEventListener('htmx:beforeRequest', (evt) => {
   evt.preventDefault(); // resolve locally, not over the network
   const elt = evt.detail.elt;
   const cmd = decodeURIComponent(path.slice(path.indexOf('/k/') + 3));
-  runKernel(cmd, evt.detail.target, elt.getAttribute('hx-swap'));
+  runKernel(cmd, evt.detail.target, elt.getAttribute('hx-swap'), elt.matches('.ik-nav, .rb-tab, .rb-link'));
 });
 // (The runbook now lives on the Demo page — urn:data:demo — and bootstraps itself via
 // hx-trigger="load" when that page is opened from the toolbar.)
+
+// The whole page is one resource: compose it through the Engine and inject the
+// result. The composed HTML contains <ikigai-cli>, which self-wires on insertion.
+try {
+  const app = document.getElementById('app');
+  const r = JSON.parse(await evalLineAsync('source urn:iki:fn:compose src=urn:data:page'));
+  app.innerHTML = r.kind === 'output' ? r.text : ('compose error: ' + r.text);
+  htmx.process(app); // wire the page toolbar's hx-* so inter-page nav works on first load
+} catch (e) {
+  document.getElementById('app').textContent = 'error: ' + e;
+}
+
+if (location.hash) await restoreLocation();
+else updateLocation(false);
 
 // --- Passkey identity bridge ----------------------------------------------
 // The ONE bit of imperative glue for identity: the WebAuthn ceremony, which only a

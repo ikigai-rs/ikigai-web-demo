@@ -1,9 +1,8 @@
 # smoke — the gate that runs the wasm
 
 `ci.yml` checks that this repo *compiles*: `cargo fmt`, `cargo clippy --lib --target
-wasm32-unknown-unknown`, `cargo clippy --all-targets`. Nothing there executes a single
-instruction of the artifact that ships, and `cargo test` passes vacuously — the crate has
-no tests.
+wasm32-unknown-unknown`, `cargo clippy --all-targets`. The native tests and docs exercise the native host, but they do not execute the
+WebAssembly artifact that ships. The Playwright suite fills that browser runtime gap.
 
 That gap has a cost on the record. `ikigai-time 0.1.12` stamped completed jobs with
 `std::time::Instant::now()`. It compiles clean for `wasm32-unknown-unknown` and panics at
@@ -128,6 +127,25 @@ itself — no cached credential id, and a returning visitor's `get()` carrying n
 `allowCredentials` — fail on that build too, further down.) Neither passes against the bug
 it exists for.
 
+## Accessibility regressions
+
+`accessibility.spec.js` runs axe-core 4.10.3 through `@axe-core/playwright` 4.10.2 against
+all four composed views and every runbook tab at 1280 and 320 CSS px. Each tab runs its
+first step except Identity, which requires a passkey ceremony. It also checks the network
+connection form, keyboard focus, terminal log semantics, view/tab titles and history,
+bookmarked tabs and reload, pause/resume across views, keyboard Cache scrolling, and
+fallback messages with JavaScript disabled or wasm requests blocked. These run in the
+same Pages smoke job as the runtime checks, over the built tree that would be deployed.
+
+Before the fixes, the new axe tests failed on Home's text contrast, skipped heading, and
+nested complementary landmark, and on net.html's unnamed URL field, missing h1, and content
+outside landmarks. A browser probe against the successful build of `95a2525` also reproduced
+Catalog's 169 px and Control's 459 px horizontal overflow at 320 px, lost focus on view and
+tab switches, unchanged title/URL, unpausable readouts, and an ellipsis with JS or wasm off.
+
+These are automated Chromium checks, not a WCAG conformance claim. No assistive technology
+or manual 400% zoom evaluation has been performed; see `ACCESSIBILITY.md` for the gaps.
+
 ## Running it locally
 
 You need a built `dist/` — the wasm and its JS bindings are gitignored because CI generates
@@ -144,7 +162,7 @@ Then, from this directory:
 npm ci && npx playwright install chromium && npx playwright test
 ```
 
-It takes about five seconds. `npx playwright test --headed` watches it happen, and
+The full suite takes roughly a minute on a warm machine. `npx playwright test --headed` watches it happen, and
 `npx playwright show-trace test-results/*/trace.zip` opens the trace after a failure.
 
 ## Where it runs
