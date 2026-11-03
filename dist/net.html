@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>A page pulled over the network by ikigai</title>
 <style>
+  :focus-visible { outline: 3px solid #1f7199; outline-offset: 3px; }
+  .cli-input:focus-visible, .cli-transcript:focus-visible, .ctl-readout:focus-visible { outline-color: #6cb6ff; }
+  body { overflow-wrap: anywhere; }
   html { background: #fff; }
   body { font: 17px/1.7 -apple-system, system-ui, sans-serif; max-width: 860px; margin: 44px auto; padding: 0 22px; color: #1a1a1a; background: #fff; }
   h1 { color: #1f7199; font-size: 28px; margin-bottom: 2px; }
@@ -12,8 +15,8 @@
   article { border: 1px solid #dfe2e5; border-radius: 10px; padding: 4px 18px 16px; margin: 18px 0; }
   code { color: #7a3e9d; font: 14px ui-monospace, Menlo, monospace; }
   b { background: #eef7ee; border-radius: 4px; padding: 0 4px; font-weight: 600; }
-  h3 { font-size: 17px; color: #444; margin-top: 4px; }
-  aside.about { border-left: 3px solid #1f7199; background: #f6f9fb; border-radius: 6px; padding: 2px 16px 12px; margin: 16px 0; }
+  .about h2, .cli-mount h2 { font-size: 17px; color: #444; margin-top: 4px; }
+  .about { border-left: 3px solid #1f7199; background: #f6f9fb; border-radius: 6px; padding: 2px 16px 12px; margin: 16px 0; }
   .literal { color: #555; }
   .literal b { background: none; padding: 0; }
   .panel { border: 1px solid #dfe2e5; border-radius: 10px; padding: 14px 18px; margin: 16px 0; background: #fbfcfd; }
@@ -25,33 +28,39 @@
   .net-badge { display: inline-block; font: 12px ui-monospace, Menlo, monospace; background: #eaf3f7; color: #1f7199; border-radius: 4px; padding: 1px 7px; margin-left: 6px; }
 
   /* The in-page terminal — every command is an ikigai-wire Call over WebTransport. */
-  .cli-mount { margin-top: 30px; } .cli-mount h3 { color: #1f7199; }
+  .cli-mount { margin-top: 30px; } .cli-mount h2 { color: #1f7199; }
   ikigai-cli { display: block; background: #0f1419; border-radius: 10px; padding: 12px 14px; font: 13.5px/1.55 ui-monospace, Menlo, monospace; color: #d7dde3; }
   .cli-transcript { max-height: 320px; overflow-y: auto; }
   .cli-line { margin: 0; white-space: pre-wrap; word-break: break-word; font: inherit; }
   .cli-echo { color: #6cb6ff; } .cli-error { color: #ff8a8a; } .cli-help { color: #aab2bb; }
-  .cli-cache { color: #65727f; font-style: italic; margin-bottom: 7px; } .cli-hint { color: #65727f; }
+  .cli-cache { color: #8b98a5; font-style: italic; margin-bottom: 7px; } .cli-hint { color: #8b98a5; }
   .cli-inputline { display: flex; align-items: baseline; gap: 7px; margin-top: 5px; border-top: 1px solid #1f2730; padding-top: 8px; }
-  .cli-prompt { color: #6cb6ff; } .cli-input { flex: 1; background: transparent; border: 0; outline: none; color: #d7dde3; font: inherit; padding: 0; }
+  .cli-prompt { color: #6cb6ff; } .cli-input { flex: 1; background: transparent; border: 0; min-width: 0; color: #d7dde3; font: inherit; padding: 0; }
   ikigai-cli code { color: #c39be8; }
 </style>
 </head>
 <body>
 
-<div class="panel">
+<main>
+<section class="panel" aria-labelledby="network-title">
+  <h1 id="network-title">ikigai over WebTransport</h1>
   <strong>ikigai over WebTransport</strong> — this page does <em>not</em> host the kernel. It opens a
   WebTransport (HTTP/3 / QUIC) connection to a kernel server; the page pull <em>and</em> every terminal
   command below are <code>ikigai-wire</code> Calls on their own streams (the same protocol
   <code>ikigai-ipc</code>/<code>ikigai-quic</code> speak). The kernel — and its cache — are on the other end.
   <p style="margin:10px 0 2px;color:#555">Run <code>cargo run --bin ikigai-net-server</code>, paste the
   printed cert hash, and connect (or open with <code>#cert=&lt;hash&gt;</code>):</p>
+  <label for="cert">Server certificate SHA-256 hash</label>
   <input id="cert" placeholder="server cert sha-256 (hex)" autocomplete="off" spellcheck="false">
+  <label for="url">Server URL</label>
   <input id="url" value="https://127.0.0.1:4433" autocomplete="off" spellcheck="false">
   <button id="go">Connect &amp; pull urn:data:page</button>
-  <div id="status" class="status"></div>
-</div>
+  <div id="status" class="status" role="status"></div>
+</section>
 
-<main id="app"></main>
+<div id="app"></div>
+<noscript><p>JavaScript and WebAssembly are required to connect to the kernel server.</p></noscript>
+</main>
 
 <script type="module">
 import init, { encodeComposeCall, encodeIssue, encodeIsCached, encodeEntries, decodeReply } from './ikigai_web_demo.js';
@@ -129,7 +138,7 @@ class IkigaiCli extends HTMLElement {
   connectedCallback() {
     if (this._wired) return; this._wired = true;
     this.innerHTML =
-      '<div class="cli-transcript"></div>' +
+      '<div class="cli-transcript" role="log" aria-label="Command transcript" tabindex="0"></div>' +
       '<div class="cli-inputline"><span class="cli-prompt">ikigai@remote&gt;</span>' +
       '<input class="cli-input" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="ikigai command"></div>';
     this.transcript = this.querySelector('.cli-transcript');
