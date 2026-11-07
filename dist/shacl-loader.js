@@ -42,10 +42,27 @@ function loadLibs () {
 // violation order matches the native CLI's.
 const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0)
 
+// Match ikigai-shacl's js-parity renderer (PR #37) and Violation::path contract.
+function stepString (step) {
+  const preds = step.predicates.map(p => p.value)
+  if (step.quantifier === 'one') {
+    if (preds.length > 1) return `(${preds.join(' | ')})`
+    return step.start === 'object' ? `^(${preds[0]})` : preds[0]
+  }
+  const postfix = { zeroOrMore: '*', oneOrMore: '+', zeroOrOne: '?' }[step.quantifier]
+  if (!postfix) throw new Error(`unknown path quantifier ${step.quantifier}`)
+  return `(${preds[0]})${postfix}`
+}
+
+function pathString (path) {
+  if (!path || path.length === 0) return null
+  return path.length === 1 ? stepString(path[0]) : `(${path.map(stepString).join(' / ')})`
+}
+
 function outcomeJson (report) {
   const violations = report.results.map(r => ({
     focus_node: r.focusNode?.term?.value ?? null,
-    path: r.path?.[0]?.predicates?.[0]?.value ?? null,
+    path: pathString(r.path),
     component: r.constraintComponent?.value ?? null
   }))
   // (focus, path [None→'' sorts first, matching Option<String>], component)
