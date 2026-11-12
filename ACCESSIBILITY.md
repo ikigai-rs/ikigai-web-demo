@@ -248,6 +248,7 @@ added, after a reported barrier is fixed, and before any conformance claim.
 | 2026-10-15 | This file, with the first axe run and its findings | PR #74 |
 | 2026-10-27 | `ikigai-runbook` 0.3.0: its tab strip is a roving tabindex driven by a script the page now resolves through the kernel (`runKernelScripts`), so the arrow keys, Home and End reach every tab; its Bytes tab is hidden (this kernel cannot serve it); its status line is listed above as not working here | PR #78; smoke `the runbook tab strip moves focus…` |
 | 2026-11-02 | Fix the October barriers: contrast, focus and transcript semantics, view/tab history and titles, pausable display updates, keyboard readouts, narrow reflow, headings/landmarks, network form labels, and JS/wasm fallback messages. Add browser accessibility regression coverage. | PR #82; `smoke/accessibility.spec.js`; baseline reproduced against `95a2525` |
+| 2026-11-12 | Every check named here given a Pass, Fail or Blocked result with its evidence; ikigai-ui criteria stated as not relied on | PR #84; `pages.yml` run 42345939523 on `53a851f` |
 
 ## References
 
