@@ -19,7 +19,7 @@ Adapted from the [ACCESSIBILITY.md template](https://github.com/mgifford/ACCESSI
 | Private channel | [private vulnerability reporting](https://github.com/ikigai-rs/ikigai-web-demo/security/advisories/new), for anything security-sensitive |
 | Target | WCAG 2.2 Level AA |
 | Status | Evaluation in progress. No conformance claim. |
-| Last reviewed | 2026-11-02 |
+| Last reviewed | 2026-11-12 |
 | Next review | when `dist/index.html`, `dist/net.html` or a page shape in `src/lib.rs` changes, when `ikigai-runbook` or htmx changes version, or when a page or runbook tab is added |
 
 ## Commitment
@@ -63,33 +63,69 @@ evaluation by people using assistive technology.
 view. The November regression suite checks the fixes in the composed page, but **no screen reader
 has been used**. Do not infer a conformance claim from a green build or from this file.
 
-## Evidence
+## How it is tested
 
-CI (`ci.yml` and `pages.yml`) builds the wasm, runs `cargo test`, and runs the Playwright smoke
-suite (`smoke/demo.spec.js`) over the exact tree it deploys; a red smoke blocks the deploy. The
-smoke suite proves the page composes and runs. `smoke/accessibility.spec.js` additionally runs
-axe and browser interaction checks against that composed page; failures block the Pages gate.
-The October observations below are historical baseline evidence, not a description of the fixed page.
+Every check this file names has a result: **Pass**, **Fail** or **Blocked**, with its evidence. A
+Pass covers only the stated check on the composed page, never accessibility as a whole, and is not
+a conformance claim. A check nobody ran is Blocked, never omitted; a one-off run that CI does not
+repeat is Blocked with its date, not Pass.
 
-| Check | Version | What it covers | What it does not cover |
-|---|---|---|---|
-| `smoke/demo.spec.js` (`pages.yml`, every pull request and push to main) | `@playwright/test` 1.62.1, the runner's Chromium | The page composes; the Control cards fill and a timed job completes; the tab strip, and its arrow keys, Home and End; the passkey branches; the alias window; the SHACL engines agree | No screen-reader evaluation |
-| `smoke/accessibility.spec.js` (`pages.yml`) | @axe-core/playwright 4.10.2 (axe-core 4.10.3), Playwright 1.62.1 Chromium | All four views and all 13 runbook tabs, with first step run except Identity, at 1280 and 320 px; net.html before connecting; keyboard focus, terminal log semantics, Back/reload/bookmarked tabs, pause/resume, keyboard Cache scrolling, disabled JS and blocked wasm | Screen readers; actual passkey ceremony; later steps; connected net.html; other browser engines; manual zoom/text-spacing review |
-| axe-core in Chrome over the published page (one-off) | axe-core 4.10.3, playwright-core 1.63.0, Google Chrome 153.0.8010.54 | Home (before and after a terminal command), Catalog, Control, Demo, and each of the 13 runbook tabs with its first step run (Identity's step not run), at 1280 and 320 CSS px; `net.html` before connecting. Rules axe tags WCAG 2.0/2.1/2.2 A and AA, plus best-practice rules as advisories | The passkey ceremony, a signed-in state, any runbook step beyond the first, `?shacl=js`, `net.html` connected; a dark scheme (the page has none) |
-| Keyboard probe in the same Chrome (one-off) | as above | Tab order on Home; Enter on a view button, a runbook tab and a runbook step; the terminal input's focus style | Every other control; arrow keys in the tab strip |
-| Horizontal scroll at 320 CSS px (same run) | as above | Whether any view scrolls sideways at 320 px, and what overflows | Zoom to 400% in a desktop window, text spacing |
+Unless a row says otherwise, a Pass was run on main at `53a851f` by `pages.yml`
+([run 42345939523](https://github.com/ikigai-rs/ikigai-web-demo/actions/runs/42345939523),
+2026-11-07, `smoke` job: 19 tests passed), and is run again by `pages.yml` on every pull request,
+including the one that last updated this file. That job builds the wasm and runs Playwright over
+the exact tree it deploys: `@playwright/test` 1.62.1 with the Chromium build it installs (the CI
+log does not print its version) on GitHub Actions `ubuntu-latest`, and `@axe-core/playwright`
+4.10.2 (axe-core 4.10.3) with its default rule set (its WCAG A and AA rules among them; rules axe
+turns off by default or marks experimental do not run). Any axe violation fails the test, and a failed smoke blocks the deploy.
 
-On 2026-10-15, on main at `d2b08f0` (the deployed commit): `cargo test` passed (24 tests), the smoke
-suite passed in CI on that commit (5 tests), and every WCAG A or AA violation the axe run reported
-was recorded in the baseline review (PR #74).
+| Check | Result | Evidence |
+|---|---|---|
+| axe over every view (Home, Catalog, Control, Demo) and every runbook tab, each tab with its first step run (Identity's not run), at 1280 and 320 CSS px | Pass | `smoke/accessibility.spec.js`, `composed views and every runbook tab pass axe and reflow at 320px`. Covers what axe can detect automatically, including text contrast. Does not cover later runbook steps, a signed-in state, `?shacl=js`, or what axe cannot judge (meaning, reading order, the quality of names). |
+| No horizontal scrolling at 320 CSS px (SC 1.4.10, by viewport width) | Pass | Same test: `scrollWidth <= innerWidth` on every view and tab above. Does not cover 400% browser zoom in a desktop window. |
+| Catalog cards (generated by `CATALOG_CARDS_XSL` in `src/lib.rs`) | Pass | Same test: the composed Catalog view under axe at both widths. Covers the cards as generated from main's catalog only. |
+| `net.html` before connecting: axe, a labeled Server URL field, a level-1 heading | Pass | `smoke/accessibility.spec.js`, `network connection form has named controls and landmarks`. Does not cover the connected page. |
+| Keyboard: Enter on a view button and a runbook tab keeps focus there; titles, URL fragments, Back, reload and a bookmarked tab restore the view and tab | Pass | `smoke/accessibility.spec.js`, `keyboard navigation keeps focus, titles, history, and bookmarked tabs`. Scripted keys, not a person's full keyboard pass. |
+| Runbook tab strip: arrow keys, Home and End move focus between tabs | Pass | `smoke/demo.spec.js`, `the runbook tab strip moves focus with the arrow keys, Home and End`. |
+| Terminal: input named `ikigai command`, transcript exposed as a `log` named `Command transcript`, solid focus outline, focus stays in the input after a command, axe after a command | Pass | `smoke/accessibility.spec.js`, `terminal exposes a response log and keeps visible keyboard focus`. Does not check how a screen reader announces the log. |
+| Moving and updating content can be paused (SC 2.2.2); the Cache readout scrolls with the keyboard; the clock colon does not animate | Pass | `smoke/accessibility.spec.js`, `live displays pause across views and Cache scrolls with the keyboard`. |
+| JavaScript disabled or WebAssembly blocked: the page says what it needs | Pass | `smoke/accessibility.spec.js`, `disabled JavaScript and blocked WebAssembly explain the requirements`. |
+| Passkey affordance: offers registration rather than acting unasked, in-page recovery with no browser dialog | Pass | `smoke/demo.spec.js`, `the passkey ceremony asks the authenticator, and can still register`, with `navigator.credentials` stubbed. Checks the branch taken, not the accessibility of a real authenticator's ceremony. |
+| Runbook status line (`#rb-status`) tells a screen reader a step ran | Fail | Measured in headless Chromium on 2026-10-27 (PR #78): it stays empty. Not re-measured since, but the cause is still on main: the page cancels htmx's request in `htmx:beforeRequest` (`dist/index.html`) and resolves it through the kernel, so the `htmx:afterRequest` the runbook listens for never fires. Listed under Known limitations. |
+| `prefers-reduced-motion` stops the Control view's pulse and refresh sweep | Blocked | The guard is in `dist/index.html`, but no test emulates the preference. |
+| Text resized to 200% and 400% browser zoom (SC 1.4.4, 1.4.10) | Blocked | No zoom run; the reflow row above uses a 320 px viewport only. |
+| Text spacing (SC 1.4.12) | Blocked | Not run. |
+| Forced colors (high contrast) | Blocked | Not run. |
+| Other browser engines (Firefox, Safari) | Blocked | Not run; the suite runs Chromium only. |
+| `net.html` connected to a server | Blocked | Not run: the smoke job starts no WebTransport server. |
+| A real passkey ceremony and the signed-in page | Blocked | A WebAuthn ceremony cannot complete headlessly; not run by hand. |
+| Runbook steps after the first in each tab | Blocked | Not run. |
+| axe-core in Google Chrome 153.0.8010.54 over the published page, with a keyboard probe (2026-10-15) | Blocked | Historical baseline before the fixes of PR #82, recorded in PR #74 (playwright-core 1.63.0, axe-core 4.10.3, macOS). CI does not repeat it; the automated rows above replace it. |
+| Manual keyboard pass by a person | Blocked | No person has done one. |
+| Screen reader | Blocked | No screen reader has been used on this page. |
+| Screen magnifier | Blocked | No screen magnifier has been used on this page. |
+| Speech input | Blocked | No speech-input software has been used on this page. |
+| Switch access | Blocked | No switch-access software has been used on this page. |
+| Braille display | Blocked | No braille display has been used on this page. |
+
+`cargo test` (`ci.yml`) tests the native host, the wire codec and the server; it renders no page
+and is not accessibility evidence.
 
 **What a browser is needed for.** The interactive page appears only after the kernel composes
 it; the static shell contains a requirements message. `dist/index.html` wraps `<main id="app">`,
-and the page shapes in `src/lib.rs` are fragments with transclusion markers. Every check above ran
-in Chrome against the composed page.
+and the page shapes in `src/lib.rs` are fragments with transclusion markers. Every browser check
+above ran against the composed page.
 
 What only a person can judge (whether the runbook's steps and the terminal's answers are
 understood, and how the live Control readouts behave with a screen reader) has not been assessed.
+
+### ikigai-ui's per-kind criteria
+
+This repository does not depend on `ikigai-ui` and draws no control through it, so it relies on
+none of its per-kind accessibility criteria (`urn:iki:ui:criterion:kind:{kind}:target:{target}`),
+and its tests verify none of their SEE checks. Their HEAR checks would be Blocked here as
+everywhere: no screen-reader job runs. The controls on this page are its own HTML (`dist/`,
+`src/lib.rs`) and `ikigai-runbook`'s, and the rows above are their evidence.
 
 ## Browsers and assistive technology, as tested
 
@@ -97,13 +133,13 @@ Only what has actually been run. This is not a list of what is supported.
 
 | Platform | Browser | Assistive technology | What | When |
 |---|---|---|---|---|
-| GitHub Actions `ubuntu-latest` | Playwright's Chromium | none | Runtime smoke and accessibility regression suite | every pull request and every push to main |
-| Linux | Playwright Chromium 151.0.7922.34 | none | axe 4.10.3 across views/tabs at 1280 and 320 px; automated keyboard/navigation/pause checks | 2026-11-02 |
-| macOS | Google Chrome 153.0.8010.54 (driven by playwright-core 1.63.0) | none | axe-core 4.10.3 over the published page, 1280 and 320 px; the keyboard probe | 2026-10-15 |
+| GitHub Actions `ubuntu-latest` | Chromium installed by Playwright 1.62.1 | none | The smoke and accessibility suites above | every pull request and every push to main; last on main 2026-11-07 |
+| Linux | Playwright Chromium 151.0.7922.34 | none | The same accessibility suite, run while writing it (PR #82) | 2026-11-02 |
+| macOS | Google Chrome 153.0.8010.54 (driven by playwright-core 1.63.0) | none | axe-core 4.10.3 over the published page, 1280 and 320 px; the keyboard probe (PR #74) | 2026-10-15 |
 
-**No screen reader, screen magnifier, speech-input or switch-access software has been used to test
-this repository.** No other browser engine (Firefox, Safari) has been run, and nothing has been
-tried in a forced-colors (high contrast) mode.
+**No screen reader, screen magnifier, speech-input, switch-access software or braille display has
+been used to test this repository.** No other browser engine (Firefox, Safari) has been run, and
+nothing has been tried in a forced-colors (high contrast) mode.
 
 ## Known limitations
 
@@ -148,12 +184,18 @@ For a change to the page, its shapes, styles or scripts, include in the descript
 ```markdown
 ## Accessibility
 
-- What a user does differently, and which views and tabs it touches:
-- Automated: smoke, and any axe run (version, browser, views): pass / fail
-- By hand (keyboard, zoom, narrow screen), with browser and version, or "not done":
-- Assistive technology, with name and version, or "not tested":
-- Not tested, and known limitations:
+What a user does differently, and which views and tabs it touches:
+
+| Check | Result | Evidence |
+|---|---|---|
+| Smoke and accessibility suites (`pages.yml`) | Pass / Fail | the run, Playwright and axe versions, the views and tabs it reached |
+| By hand (keyboard, zoom, narrow screen) | Pass / Fail / Blocked | browser and version, or why it was not done |
+| Screen reader | Blocked | unless one was used: its name and version, with the browser |
+| Not tested, and known limitations | | |
 ```
+
+Every check gets a result: Pass, Fail or Blocked. Keep a check nobody ran as Blocked, a screen
+reader included; never call it "not applicable".
 
 ## Coding agents and automation
 
@@ -204,8 +246,8 @@ added, after a reported barrier is fixed, and before any conformance claim.
 | 2026-06-30 | The nav clock's blinking colon stops under `prefers-reduced-motion` | PR #42 |
 | 2026-09-03 | The passkey recovery link is underlined inside its hint, so it is not told apart by color alone | PR #52 |
 | 2026-10-15 | This file, with the first axe run and its findings | PR #74 |
-| 2026-10-27 | `ikigai-runbook` 0.3.0: its tab strip is a roving tabindex driven by a script the page now resolves through the kernel (`runKernelScripts`), so the arrow keys, Home and End reach every tab; its Bytes tab is hidden (this kernel cannot serve it); its status line is listed above as not working here | this pull request; smoke `the runbook tab strip moves focus…` |
-| 2026-11-02 | Fix the October barriers: contrast, focus and transcript semantics, view/tab history and titles, pausable display updates, keyboard readouts, narrow reflow, headings/landmarks, network form labels, and JS/wasm fallback messages. Add browser accessibility regression coverage. | `smoke/accessibility.spec.js`; baseline reproduced against `95a2525` |
+| 2026-10-27 | `ikigai-runbook` 0.3.0: its tab strip is a roving tabindex driven by a script the page now resolves through the kernel (`runKernelScripts`), so the arrow keys, Home and End reach every tab; its Bytes tab is hidden (this kernel cannot serve it); its status line is listed above as not working here | PR #78; smoke `the runbook tab strip moves focus…` |
+| 2026-11-02 | Fix the October barriers: contrast, focus and transcript semantics, view/tab history and titles, pausable display updates, keyboard readouts, narrow reflow, headings/landmarks, network form labels, and JS/wasm fallback messages. Add browser accessibility regression coverage. | PR #82; `smoke/accessibility.spec.js`; baseline reproduced against `95a2525` |
 
 ## References
 
