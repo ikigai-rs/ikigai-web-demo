@@ -1,6 +1,6 @@
 [package]
 name = "ikigai-web-demo"
-version = "0.0.0"
+version = "0.0.1"
 edition = "2021"
 publish = false
 description = "Bootstrap: the ikigai kernel running in the browser via WebAssembly."
@@ -328,6 +328,14 @@ web-sys = { version = "0.3", features = [
 # face writes a bare literal against a narrower ik: range). 0.12.0 adds BODIES and
 # BODY-INPUTS by default; the walk shares the kernel root for direct body probes.
 ikigai-conformance = "0.12.0"
+# The shared percent decoder (`ikigai_fn::html::percent_decode`, first published in
+# ikigai-fn 0.9.0), for tests/k_adapter.rs only: its `steps()` reads a `/k/` command the
+# way the page's `decodeURIComponent` does, which ikigai-runbook 0.5.1's percent-encoded
+# steps need (ledger #4093). Renamed and test-only on purpose: the host's own ikigai-fn
+# above stays at 0.7, because 0.8.0 changes compose's marker arguments, 0.7.2 adds an
+# endpoint the conformance walk pins as a decision, and ikigai-runbook 0.3.0 links ^0.7.
+# Fold this into the main dependency when the host takes ikigai-fn 0.9 or later.
+ikigai-fn-html = { package = "ikigai-fn", version = "0.9.0" }
 # A scratch jail for the file module: the walk FIRES Sink/Delete, and the native
 # backend is std::fs, so the fixture must never be this repo's tree.
 tempfile = "3"

@@ -46,6 +46,9 @@ use ikigai_core::{
     DENIED_NOTE, FAILED_NOTE,
 };
 use ikigai_engine::{Action, Engine};
+use ikigai_fn::html::{attr, url_segment};
+// The shared decoder, from ikigai-fn 0.9 (see the dev-dependency in Cargo.toml).
+use ikigai_fn_html::html::percent_decode;
 use ikigai_web_demo::{build_kernel_in, define_cap_profiles};
 
 /// Every event the kernel reported: computed invocations and pre-dispatch denials.
@@ -108,24 +111,39 @@ fn run(engine: &Engine, cmd: &str) -> Result<String, String> {
     }
 }
 
-/// Reverse the runbook's attribute escaping (`esc` in ikigai-runbook).
+/// Reverse the runbook's attribute escaping (`attr` in ikigai-fn, which ikigai-runbook calls).
 fn unescape(s: &str) -> String {
     s.replace("&quot;", "\"")
+        .replace("&#39;", "'")
         .replace("&lt;", "<")
         .replace("&gt;", ">")
         .replace("&amp;", "&")
 }
 
+/// The command a `/k/` URL names, read the way the page reads it: the attribute value as
+/// the browser hands it over (escaping reversed), then `decodeURIComponent` over the text
+/// after `/k/`, here `percent_decode(_, false)`, which, like `decodeURIComponent`, leaves a
+/// `+` alone and refuses a malformed escape. ikigai-runbook 0.5.1 percent-encodes the
+/// command (`source%20urn:...`) so a `?` or `#` in it cannot end the path; older runbooks
+/// write it raw, which decodes to itself unless a `%` in it starts an escape. A `%` that
+/// starts none makes the page's `decodeURIComponent` throw a `URIError`, so it panics here.
+fn k_command(value: &str) -> String {
+    let raw = unescape(value);
+    percent_decode(&raw, false)
+        .unwrap_or_else(|e| panic!("the page's decodeURIComponent throws on `{raw}`: {e}"))
+}
+
 /// The commands a runbook page offers, in order — every `hx-get="/k/<command>"` the HTML
 /// carries except the tab strip's own navigation and the `clear` button: the same slice
-/// the page's `htmx:beforeRequest` handler takes (`path.slice(path.indexOf('/k/') + 3)`).
+/// the page's `htmx:beforeRequest` handler takes (`path.slice(path.indexOf('/k/') + 3)`),
+/// percent-decoded as that handler's `decodeURIComponent` decodes it ([`k_command`]).
 fn steps(html: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut rest = html;
     while let Some(at) = rest.find("hx-get=\"/k/") {
         rest = &rest[at + "hx-get=\"/k/".len()..];
         let end = rest.find('"').expect("a closed attribute");
-        let cmd = unescape(&rest[..end]);
+        let cmd = k_command(&rest[..end]);
         rest = &rest[end..];
         if cmd == "clear" || cmd.starts_with("source urn:runbook:") {
             continue;
@@ -316,7 +334,7 @@ fn the_runbook_page_script_resolves_through_the_adapter() {
         .find(tag)
         .expect("the page loads its script by a /k/ command")
         + tag.len();
-    let cmd = unescape(&tab[at..at + tab[at..].find('"').expect("a closed attribute")]);
+    let cmd = k_command(&tab[at..at + tab[at..].find('"').expect("a closed attribute")]);
     assert_eq!(cmd, "source urn:runbook:script");
     assert!(
         tab.contains("data-rb-keys=\"tabs\""),
@@ -327,4 +345,56 @@ fn the_runbook_page_script_resolves_through_the_adapter() {
         script.contains("ArrowRight") && script.contains("data-rb-keys"),
         "{script}"
     );
+}
+
+/// Every `hx-get="/k/<command>"` in `html` rewritten the way ikigai-runbook 0.5.1 writes
+/// it (ikigai-runbook #47): the command percent-encoded as one path segment, then
+/// attribute-escaped. The `clear` button is left as it is.
+fn percent_encode_steps(html: &str) -> String {
+    let mut out = String::new();
+    let mut rest = html;
+    while let Some(at) = rest.find("hx-get=\"/k/") {
+        let start = at + "hx-get=\"/k/".len();
+        out.push_str(&rest[..start]);
+        rest = &rest[start..];
+        let end = rest.find('"').expect("a closed attribute");
+        out.push_str(&attr(&url_segment(&unescape(&rest[..end]))));
+        rest = &rest[end..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// A step whose command holds a space, `?`, `#` and `%` reads back unchanged once it is
+/// percent-encoded in the path, the way runbook 0.5.1 writes it and the page's
+/// `decodeURIComponent` reads it. The same command unencoded, as runbook 0.5.0 and older
+/// write it, reads back unchanged too as long as no `%` in it starts an escape (a literal
+/// `%` that does not would make the page's `decodeURIComponent` throw).
+#[test]
+fn a_percent_encoded_step_reads_back_unchanged() {
+    let cmd = "echo what? #1 at 100%";
+    let encoded = format!(
+        "<button class=\"rb-step\" hx-get=\"/k/{}\" hx-target=\"#rb-out\">",
+        attr(&url_segment(cmd))
+    );
+    assert!(encoded.contains("hx-get=\"/k/echo%20what%3F%20%231%20at%20100%25\""));
+    assert_eq!(steps(&encoded), vec![cmd]);
+
+    let unencoded = "echo it&#39;s &quot;a&quot; &lt;b&gt; &amp; c?d#e";
+    let page =
+        format!("<button class=\"rb-step\" hx-get=\"/k/{unencoded}\" hx-target=\"#rb-out\">");
+    assert_eq!(steps(&page), vec!["echo it's \"a\" <b> & c?d#e"]);
+}
+
+/// A whole rendered tab, its steps re-encoded the 0.5.1 way, offers the same commands as
+/// the tab as this host renders it today, and those commands still run.
+#[test]
+fn a_tab_offers_the_same_steps_percent_encoded() {
+    let s = session();
+    let tab = run(&s.engine, "source urn:runbook:basics as=text/html").expect("renders");
+    let plain = steps(&tab);
+    assert!(!plain.is_empty(), "the Basics tab offers steps");
+    let encoded = percent_encode_steps(&tab);
+    assert_ne!(encoded, tab, "the re-encoding changed the HTML");
+    assert_eq!(steps(&encoded), plain);
 }
