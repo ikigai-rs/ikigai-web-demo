@@ -9,12 +9,13 @@
 //!
 //! ## The jail is `ws`, so the process runs in a scratch directory
 //!
-//! The page's scopes spell the jail root: `urn:cap:fs:read:ws` (the `read-only` profile),
-//! `urn:cap:fs:write:ws/<id>` (a login). ikigai-fs matches a scope's directory against the
-//! ROOT-JOINED path, so those scopes hold only over a jail whose root is literally `ws` —
-//! the virtual `localStorage` root in the page, `./ws` relative to the process on native.
-//! Each test therefore takes a process-wide lock, moves into its own tempdir and builds the
-//! kernel over `ws` there; nothing here touches the working tree.
+//! The page's scopes are jail-relative (ikigai-fs 0.5.0 and later, ledger #4098):
+//! `urn:cap:fs:read:.` (the `read-only` profile, the whole jail) and
+//! `urn:cap:fs:write:<id>` (a login, the jail's `<id>/`). The jail is the virtual
+//! `localStorage` root `ws` in the page and `./ws` relative to the process here, as the
+//! page's `build_kernel` mounts it. Each test therefore takes a process-wide lock, moves
+//! into its own tempdir and builds the kernel over `ws` there; nothing here touches the
+//! working tree.
 //!
 //! ## Two gates, two witnesses each
 //!
@@ -25,7 +26,7 @@
 //!   BEFORE dispatch. Core reports that as a [`TraceEvent`] tagged [`DENIED_NOTE`] with
 //!   `started == None` — the one event that names something which never ran.
 //! - **The module's ACL** (the parameterized rule): a session holding a grant under the
-//!   family but not for THIS path (`ws/abc` against `someone-else/…`) passes the floor,
+//!   family but not for THIS path (`abc` against `someone-else/…`) passes the floor,
 //!   and the file endpoint's own longest-prefix rule refuses inside `invoke`. That refusal
 //!   is a typed `Denied` too, and since core 0.1.92 it is a trace node of its own (ledger
 //!   #559, #20): one TIMED event tagged `(`[`FAILED_NOTE`]`, "denied")` — the endpoint ran
@@ -46,9 +47,8 @@ use ikigai_core::{
     DENIED_NOTE, FAILED_NOTE,
 };
 use ikigai_engine::{Action, Engine};
-use ikigai_fn::html::{attr, url_segment};
-// The shared decoder, from ikigai-fn 0.9 (see the dev-dependency in Cargo.toml).
-use ikigai_fn_html::html::percent_decode;
+// `percent_decode` is the shared decoder (ikigai-fn 0.9 and later).
+use ikigai_fn::html::{attr, percent_decode, url_segment};
 use ikigai_web_demo::{build_kernel_in, define_cap_profiles};
 
 /// Every event the kernel reported: computed invocations and pre-dispatch denials.
@@ -167,7 +167,7 @@ fn read(path: &Path) -> String {
 }
 
 /// The Identity tab, signed in as the page signs in (`sink urn:host:login` with the three
-/// `ws/<id>` scopes the passkey bridge mints): three steps, extracted and run. The write
+/// `<id>` scopes the passkey bridge mints): three steps, extracted and run. The write
 /// inside the segment lands, the read returns it, and the write OUTSIDE the segment is
 /// refused by the file module's ACL — typed at the kernel, `denied:` through the adapter —
 /// with nothing on disk and exactly one trace event, TIMED and tagged `("failed",
@@ -178,7 +178,7 @@ fn an_identity_step_outside_the_segment_is_denied_and_never_reaches_the_disk() {
     let s = session();
     let login = run(
         &s.engine,
-        "sink urn:host:login urn:cap:fs:read:ws/abc urn:cap:fs:write:ws/abc urn:cap:fs:delete:ws/abc",
+        "sink urn:host:login urn:cap:fs:read:abc urn:cap:fs:write:abc urn:cap:fs:delete:abc",
     )
     .expect("login is a session operation");
     assert!(login.starts_with("logged in"), "{login}");
@@ -266,7 +266,7 @@ fn the_zerotrust_tab_runs_through_the_adapter_and_the_gated_write_is_refused_bef
     run(&s.engine, &steps[1]).expect("2 · cap read-only");
     assert_eq!(
         s.engine.capability(),
-        Capability::root().attenuate(["urn:cap:fs:read:ws"]),
+        Capability::root().attenuate(["urn:cap:fs:read:."]),
         "the page's profile"
     );
     let before = s.trace.events().len();

@@ -446,17 +446,29 @@ fn host_info(nature: &'static str) -> FnEndpoint {
 /// resource and swaps it in. Uncacheable — it reflects live session state.
 ///
 /// Anonymous (root authority) renders a "Sign in with passkey" link; a session holding
-/// `urn:cap:fs:read:ws/<id>` renders the `ws/<id>` identity chip plus "Sign out". The
+/// `urn:cap:fs:read:<id>` renders the `ws/<id>` identity chip plus "Sign out". The
 /// imperative WebAuthn ceremony behind `#ik-login`/`#ik-logout` lives in the page's one
 /// glue bridge (index.html), the same shape as the htmx `/k/<cmd>` adapter.
-/// The workspace segment id from a session capability's `urn:cap:fs:read:ws/<id>` scope
+/// The workspace segment id from a session capability's `urn:cap:fs:read:<id>` scope
 /// — the logged-in identity, or `None` when anonymous (root) / unscoped. The capability
 /// *is* the identity, so the affordance and the walkthrough both read it from here.
+///
+/// Since ikigai-fs 0.5.0 a relative scope is JAIL-relative (ledger #230), so the segment
+/// `<id>` of the jail `ws` is spelled `<id>`, not `ws/<id>` (ledger #4098). A login's id is
+/// one segment of `[a-z0-9]` (the passkey bridge strips everything else), so only a plain
+/// segment counts: never `.` (the whole jail, the `read-only` profile), a deny (`-…`), an
+/// absolute path or a nested one.
 fn session_client_id(cap: &Capability) -> Option<String> {
     cap.scopes().and_then(|scopes| {
         scopes
             .iter()
-            .find_map(|s| s.strip_prefix("urn:cap:fs:read:ws/"))
+            .filter_map(|s| s.strip_prefix("urn:cap:fs:read:"))
+            .find(|seg| {
+                !seg.is_empty()
+                    && seg
+                        .bytes()
+                        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+            })
             .map(str::to_string)
     })
 }
@@ -1113,10 +1125,12 @@ fn shacl_space() -> Arc<dyn Space> {
 /// they share a space and a cache.
 ///
 /// The file module's jail is `ws`: in the page that is the virtual `ws` segment of
-/// `localStorage`, which is what the page's `urn:cap:fs:*:ws/<id>` scopes are spelled
-/// against. On native the same `ws` would be a directory relative to the process's
-/// working directory, so a native host calls [`build_kernel_in`] with an absolute root
-/// instead — the WebTransport server (`src/bin/server.rs`) does (ledger #183).
+/// `localStorage`. The page's scopes are spelled inside it, jail-relative as ikigai-fs 0.5.0
+/// and later read a relative scope: `urn:cap:fs:*:<id>` for a login's segment and
+/// `urn:cap:fs:read:.` for the whole jail. On native the same `ws` would be a directory
+/// relative to the process's working directory, so a native host calls [`build_kernel_in`]
+/// with an absolute root instead — the WebTransport server (`src/bin/server.rs`) does
+/// (ledger #183).
 pub fn build_kernel(nature: &'static str) -> Kernel {
     build_kernel_in(nature, "ws")
 }
@@ -1127,10 +1141,11 @@ pub fn build_kernel(nature: &'static str) -> Kernel {
 /// one follows the process's working directory. The WebTransport server passes the
 /// canonical path it resolved at startup, and a test that walks the kernel — the
 /// conformance suite FIRES `Sink` and `Delete` on `urn:file:*` — hands it a scratch
-/// directory rather than write beside the sources. A path-ACL scope is spelled against
-/// whatever root is given (`ikigai-fs` places scopes against the root's spelling), so an
-/// absolute root takes `urn:cap:fs:read:<root>/…`, not the page's `ws/…`. Everything else
-/// is identical: same spaces, same renderer, same alias table.
+/// directory rather than write beside the sources. A RELATIVE path-ACL scope names a path
+/// inside the jail whatever root is given (ikigai-fs 0.5.0 and later), so the page's `<id>`
+/// and `.` hold over an absolute root too; an absolute scope is placed against the root's
+/// own spelling (`urn:cap:fs:read:<root>/…`). Everything else is identical: same spaces,
+/// same renderer, same alias table.
 ///
 /// The HTTP module's transport is the target's default: `fetch` in the page, and on
 /// native NONE — every granted `urn:http*` is an `Unavailable` naming the missing
@@ -1187,6 +1202,18 @@ fn build_kernel_and_space_with_transport(
     // `ikigai-compress`, so every step would answer `no endpoint resolved`. It stays bound as
     // `urn:runbook:bytes`, like Lisp.
     ikigai_runbook::hide_tab("bytes");
+    // Withdraw the five tabs new in ikigai-runbook 0.4 and 0.5 that this kernel cannot serve
+    // (ledger #4098): `vocabularies`, `typing`, `topics`, `thread` and `bounds` (labeled Two
+    // vocabularies, Domain & range, Topics, The thread, Reasoner bounds). Each one's steps
+    // read `urn:reason:inferred`, `urn:reason:closure` or `urn:sparql:select`, and this
+    // kernel links neither ikigai-reason nor ikigai-sparql, so they would answer `no endpoint
+    // resolved`. They stay bound as `urn:runbook:{id}`, like Lisp and Bytes. Streams, also
+    // new, stays: the file module, the kernel's `urn:stream:*` builtins and
+    // `urn:rdf:transrept` serve it, and its `spill` step's refusal in a browser is the one
+    // its own note describes.
+    for id in ["vocabularies", "typing", "topics", "thread", "bounds"] {
+        ikigai_runbook::hide_tab(id);
+    }
     // The reusable functions come from the linked `ikigai-fn` module crate
     // (compiled to wasm32 alongside this lib); this host chains its own page
     // shapes, the in-page terminal mount, the greeter, and `urn:host:info`.
@@ -1794,8 +1821,8 @@ thread_local! {
         let engine = engine.with_spawner(Arc::clone(&spawner) as Arc<dyn ikigai_core::Spawner>);
         // Friendly capability profiles, so the in-page terminal reads like the
         // desktop CLI: `cap read-only` attenuates the session to a *read* scope on
-        // the file module's jail root (`ws`). The session starts at root identity,
-        // so writes work until you narrow; `cap reset` returns to root. With only a
+        // the file module's whole jail (`.`, the jail-relative spelling). The session
+        // starts at root identity, so writes work until you narrow; `cap reset` returns to root. With only a
         // read scope held, `sink urn:file:…` is then refused by the file endpoint's
         // path-ACL (`urn:cap:fs:write:…` is not granted) — capability attenuation,
         // enforced in the browser. The jail (`..` segments) is the harder floor
@@ -1811,7 +1838,10 @@ thread_local! {
 /// step under the session capability, and "a step naming a gated resource is refused
 /// under `read-only`" is only worth pinning against the real profile.
 pub fn define_cap_profiles(engine: &ikigai_engine::Engine) {
-    engine.define_cap_profile("read-only", ["urn:cap:fs:read:ws"]);
+    // `.` is the jail itself: since ikigai-fs 0.5.0 a relative scope is jail-relative, so
+    // the old `ws` would now name a `ws/` INSIDE the jail and grant nothing the walkthrough
+    // reads (ledger #4098).
+    engine.define_cap_profile("read-only", ["urn:cap:fs:read:."]);
 }
 
 /// Set a readable panic hook so Rust panics show up in the browser console.

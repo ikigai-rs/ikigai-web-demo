@@ -456,7 +456,9 @@ async function registerPasskey() {
 // via the resource. (A QUIC server's minter would derive scopes from the client cert.)
 async function completeLogin(rawId) {
   const id = (await clientIdFromRawId(rawId)).replace(/[^a-z0-9]/g, '');
-  const scopes = `urn:cap:fs:read:ws/${id} urn:cap:fs:write:ws/${id} urn:cap:fs:delete:ws/${id}`;
+  // Jail-relative (ikigai-fs 0.5.0 and later): `${id}` is the segment ws/${id} of the
+  // localStorage jail `ws`.
+  const scopes = `urn:cap:fs:read:${id} urn:cap:fs:write:${id} urn:cap:fs:delete:${id}`;
   await evalLineAsync(`sink urn:host:login ${scopes}`); // login as a resource
   await reloadIdentityTab();
 }

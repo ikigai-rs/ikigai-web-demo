@@ -6,11 +6,12 @@
 //! canonical path; it used to call `build_kernel`, whose root is the page's virtual `ws`,
 //! and so served whatever `ws` sat beside the directory it was launched from.
 //!
-//! `ikigai-fs` places a path-ACL scope against the jail root's own spelling, so moving the
-//! root moves the scopes: over an absolute root a client spells
-//! `urn:cap:fs:read:<root>/…`, and the page's relative `ws/<id>` names nothing there and is
-//! refused (default-deny, never widened). The page itself is unchanged: its root is the
-//! `localStorage` segment `ws`, where `ws/<id>` is the right spelling.
+//! `ikigai-fs` places an ABSOLUTE path-ACL scope against the jail root's own spelling, so
+//! over an absolute root a client spells `urn:cap:fs:read:<root>/…`. A RELATIVE scope names
+//! a path inside the jail whatever the root (ikigai-fs 0.5.0 and later, ledger #230), so the
+//! page's `<id>` holds here too, while the page's old spelling `ws/<id>` now names the
+//! jail's own `ws/<id>/` and is refused for `<id>/…` (default-deny, never widened; ledger
+//! #4098).
 //!
 //! No test here changes the working directory, which is the point: an absolute root makes
 //! the process's cwd irrelevant.
@@ -65,10 +66,21 @@ fn an_absolute_jail_serves_its_own_files_and_takes_scopes_spelled_against_it() {
         Ok("hello")
     );
 
-    // The page's relative spelling names nothing in this jail: refused, not widened.
-    let relative = Capability::scoped(["urn:cap:fs:read:ws/abc"]);
+    // A relative scope is jail-relative: the page's spelling holds over this jail too.
+    assert_eq!(
+        source(
+            &kernel,
+            "urn:file:abc/note.txt",
+            &Capability::scoped(["urn:cap:fs:read:abc"])
+        )
+        .as_deref(),
+        Ok("hello")
+    );
+
+    // The page's OLD spelling names the jail's own `ws/abc/`, not `abc/`: refused, not widened.
+    let old = Capability::scoped(["urn:cap:fs:read:ws/abc"]);
     assert!(
-        source(&kernel, "urn:file:abc/note.txt", &relative).is_err(),
-        "a `ws/…` scope must not hold over an absolute jail"
+        source(&kernel, "urn:file:abc/note.txt", &old).is_err(),
+        "a `ws/…` scope names `ws/…` inside the jail, never `abc/…`"
     );
 }
