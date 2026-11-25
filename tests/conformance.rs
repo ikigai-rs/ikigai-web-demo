@@ -105,6 +105,12 @@ const INHERITED: &[&str] = &[
     // `urn:iki:fn:each`, new in the ikigai-fn line this host crossed to reach core 0.2
     // (0.4.1 to 0.7.0, ledger #2261): bound beside the others, asked by nothing in the page.
     "each",
+    // New in the ikigai-fn line this host crossed to reach core 0.4 (0.7.0 to 0.12.0, ledger
+    // #4098): `digest`, `markdown` and `html-to-text`. Bound beside the others, asked by
+    // nothing in the page.
+    "digest",
+    "markdown",
+    "html-to-text",
     // ikigai-fs
     "file",
     // ikigai-http
@@ -144,6 +150,18 @@ const INHERITED: &[&str] = &[
     "runbook-selection",
     "runbook-shacl",
     "runbook-lisp",
+    // New in the ikigai-runbook line this host crossed to reach core 0.4 (0.3.0 to 0.5.0,
+    // ledger #4098). `runbook-streams` is shown: its steps run the file module, the kernel's
+    // own `urn:stream:*` builtins and `urn:rdf:transrept`, all linked here. The other five
+    // are hidden in `src/lib.rs`: their steps rest on `urn:reason:*` and `urn:sparql:*`,
+    // and this kernel links neither ikigai-reason nor ikigai-sparql. They stay bound and
+    // resolvable by name, like Lisp and Bytes.
+    "runbook-streams",
+    "runbook-vocabularies",
+    "runbook-typing",
+    "runbook-topics",
+    "runbook-thread",
+    "runbook-bounds",
     // Both new in ikigai-runbook 0.3.0 (the core 0.2 line, ledger #2261). `runbook-bytes` is
     // the gzip tab; this kernel links no `urn:compress:*`, so `src/lib.rs` hides its tab as
     // it hides Lisp's, and it stays bound and resolvable by name. `runbook-script` is the
@@ -157,6 +175,18 @@ const INHERITED: &[&str] = &[
     "data-account-ok",
     "data-account-bad",
     "data-endpoint-shape",
+    // The data the new runbook tabs above read (ikigai-runbook 0.4 and 0.5, ledger #4098).
+    "data-alignment-edit",
+    "data-people",
+    "data-vocab-alignment",
+    "data-people-mixed",
+    "data-typing",
+    "data-topics",
+    "data-tagged",
+    "data-fan-small",
+    "data-fan-large",
+    "data-fan-over-input",
+    "data-thread-graphs",
     "action-greet",
     "action-geocode",
     "action-mail",
@@ -510,7 +540,7 @@ fn the_http_facades_are_denied_before_the_transport() {
 /// early on an uncacheable result, so a `.cacheable()` added to one of these by mistake
 /// would go unreported there (PENDING #22); it fails here. And the identity affordance is
 /// rendered from the capability it is resolved under: anonymous offers sign-in, a session
-/// scoped to `ws/<id>` shows the chip and bakes the id into every step.
+/// scoped to the segment `<id>` shows the `ws/<id>` chip and bakes the id into every step.
 #[test]
 fn live_host_state_is_never_cached() {
     let jail = jail();
@@ -529,7 +559,7 @@ fn live_host_state_is_never_cached() {
     assert!(anonymous.contains("id=\"ik-login\""), "{anonymous}");
     assert!(!anonymous.contains("ik-logout"));
 
-    let session = Capability::scoped(["urn:cap:fs:read:ws/abc", "urn:cap:fs:write:ws/abc"]);
+    let session = Capability::scoped(["urn:cap:fs:read:abc", "urn:cap:fs:write:abc"]);
     let signed_in = text(
         &issue(
             kernel,

@@ -171,10 +171,17 @@ test('the Demo tab strip withdraws Lisp and keeps the tabs this kernel serves', 
   // Gone: Lisp, and Bytes (runbook 0.3.0's gzip tab; this kernel links no urn:compress:*).
   await expect(strip.getByRole('tab', { name: 'Lisp', exact: true })).toHaveCount(0);
   await expect(strip.getByRole('tab', { name: 'Bytes', exact: true })).toHaveCount(0);
+  // Gone too: the five runbook 0.4/0.5 tabs whose steps read urn:reason:* or urn:sparql:*,
+  // which this kernel does not link (ledger #4098).
+  for (const name of ['Two vocabularies', 'Domain & range', 'Topics', 'The thread', 'Reasoner bounds']) {
+    await expect(strip.getByRole('tab', { name, exact: true })).toHaveCount(0);
+  }
 
   // Still here: two built-ins, plus both tabs this host adds itself — `hide_tab` and
   // `add_tab` write to the same strip, so a mistake in one is visible in the other.
-  for (const name of ['Basics', 'Piping', 'SHACL', 'Identity', 'Timer']) {
+  // Streams (runbook 0.5.0) is served here: the file module, the kernel's urn:stream:*
+  // builtins and urn:rdf:transrept.
+  for (const name of ['Basics', 'Piping', 'SHACL', 'Streams', 'Identity', 'Timer']) {
     await expect(strip.getByRole('tab', { name, exact: true })).toBeVisible();
   }
 

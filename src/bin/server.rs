@@ -32,8 +32,10 @@
 //! server resolves the jail to an ABSOLUTE, canonical path once, at startup, creates it if
 //! it is missing, and prints it. It used to be the relative `ws`, so the files a client
 //! read and wrote depended on the directory the server happened to be launched from
-//! (ledger #183). A path-ACL scope sent with a capability is spelled against that printed
-//! path (`urn:cap:fs:read:<root>/…`), the spelling `ikigai-fs` documents.
+//! (ledger #183). A path-ACL scope sent with a capability is either absolute, spelled
+//! against that printed path (`urn:cap:fs:read:<root>/…`), or relative, which since
+//! ikigai-fs 0.5.0 names a path inside the jail (`urn:cap:fs:read:abc`), as `ikigai-fs`
+//! documents.
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};

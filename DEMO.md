@@ -100,7 +100,7 @@ command through the in-page Engine, top-to-bottom:
 
 - `sink urn:file:note.txt remember the milk` → `wrote 17 bytes` — the session starts at
   **root**, so the write lands.
-- `cap read-only` → `narrowed — capability: urn:cap:fs:read:ws`. The owner voluntarily
+- `cap read-only` → `narrowed — capability: urn:cap:fs:read:.` (`.` is the whole file jail). The owner voluntarily
   gives up authority before handing work on — the session can now only ever *shrink*.
 - `sink urn:file:note.txt nope` → **refused**: `capability does not grant `write` on
   `note.txt``. The file module's path-ACL holds a *read* scope only.

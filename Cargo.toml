@@ -1,6 +1,6 @@
 [package]
 name = "ikigai-web-demo"
-version = "0.0.1"
+version = "0.1.0"
 edition = "2021"
 publish = false
 description = "Bootstrap: the ikigai kernel running in the browser via WebAssembly."
@@ -18,10 +18,17 @@ path = "src/bin/server.rs"
 # Published crates from crates.io (graduated off the sibling path deps once
 # ikigai-core/ikigai-vocab were published at 0.1.0). This demo is a standalone
 # proof, intentionally not part of either repo's CI.
-ikigai-core = "0.2.0"  # The streams release (ledger #2261). The old 0.1 pin meant <0.2.0 under 0.x
+ikigai-core = "0.4.2"  # ⚠ `^0.4.2` is a CEILING (<0.5.0). Core 0.4 (ledger #4098), crossed with every
+                       # ikigai crate below in one move so the graph links ONE core again. 0.4.2 is the
+                       # floor ikigai-engine/resolve/wire 0.7.1/0.6.0 and ikigai-time 0.9.0 ask for.
+                       # This host needed no source change for 0.3 or 0.4: it never read
+                       # `Invocation::scope`, and every `Error::Denied` it builds or matches compiles
+                       # against the new `Denial` (it displays as its message, so the refusals the
+                       # page shows read as before). History below.
+                       # 0.2.0 was the streams release (ledger #2261). The old 0.1 pin meant <0.2.0 under 0.x
                        # rules, so this is a ceiling crossing, taken with every ikigai crate below
                        # in one move so the graph links ONE core (`cargo tree -i ikigai-core`).
-                       # Nothing here needed an API change for it. ⚠ `^0.2.0` is a CEILING (<0.3.0).
+                       # Nothing here needed an API change for it. (`^0.2.0` was a CEILING, <0.3.0.)
                        # Under 0.1, a REAL floor (ledger #1546, #1923): `Error::class()` and the
                        # failure classes, the four variants a wire v9 peer may now send (`RetryAfter`,
                        # `OverBudget`, `Refused`, `Unsupported`; `DepthExceeded` crosses typed
@@ -41,7 +48,13 @@ ikigai-core = "0.2.0"  # The streams release (ledger #2261). The old 0.1 pin mea
                        # which decodeReply rebuilds from the wire's typed failure.))
 # The reusable function library, linked in as a published module crate.
 # Compiled to wasm32 alongside this lib — the in-browser proof of module linkage.
-ikigai-fn = "0.7.0" # the published head on core 0.2 (ledger #2261); it adds `urn:iki:fn:each`,
+ikigai-fn = "0.12.0" # the published head on core 0.4 (ledger #4098), and the floor ikigai-runbook
+                    # 0.5.0 asks for. It also serves `ikigai_fn::html::percent_decode` (since 0.9),
+                    # which tests/k_adapter.rs reads, so the test-only renamed 0.9 dependency is
+                    # folded in here. The line since 0.7 adds `digest`, `markdown` and
+                    # `html-to-text`, pinned INHERITED in tests/conformance.rs; 0.8.0 changed
+                    # compose's marker arguments, and this host's markers take none. History:
+                    # 0.7.0 was the head on core 0.2 (ledger #2261); it added `urn:iki:fn:each`,
                     # pinned INHERITED in tests/conformance.rs. 0.3.0 made compose a view template
                     # language ($h{}/$r{}, {name} arguments, `||` fallbacks); none of this
                     # host's markers holds a `{` or `||`, so they read as before. 0.4.0
@@ -62,12 +75,17 @@ ikigai-fn = "0.7.0" # the published head on core 0.2 (ledger #2261); it adds `ur
                     # are URIs.)
 # The capability-gated file module, here on its wasm32 localStorage backend — the
 # browser proof that the same module serves files natively and in the page.
-ikigai-fs = "0.2.2"  # the published head on core 0.2 (ledger #2261); it declares the Sink's
+ikigai-fs = "0.6.0"  # the published head on core 0.4 (ledger #4098). ⚠ Since 0.5.0 a RELATIVE
+                     # `urn:cap:fs:` scope is JAIL-relative (ledger #230): the page's `ws/<id>` and
+                     # `ws` became `<id>` and `.` (dist/index.html, src/lib.rs). History: 0.2.2 was
+                     # the head on core 0.2 (ledger #2261); it declares the Sink's
                      # `encoding` default (utf-8), which core now notes on the trace
                      # (tests/k_adapter.rs). 0.1.8 = security floor (audit round 3, ledger #856);
                      # cacheable file Source (FileEndpoint::cacheable) for the golden thread
-ikigai-vocab = "0.2.0"  # beside core 0.2.0, the streams release (ledger #2261); the old 0.1 pin
-                        # meant <0.2.0 under 0.x rules. ⚠ `^0.2.0` is a CEILING (<0.3.0).
+ikigai-vocab = "0.4.2"  # beside core 0.4 (ledger #4098), the floor ikigai-engine 0.7.1 asks for.
+                        # ⚠ `^0.4.2` is a CEILING (<0.5.0). History: 0.2.0 was beside core 0.2.0, the
+                        # streams release (ledger #2261); the old 0.1 pin
+                        # meant <0.2.0 under 0.x rules. (`^0.2.0` was a CEILING, <0.3.0.)
                         # Under 0.1, beside core 0.1.108 (ledger #1546: ik:mayFail, ik:FailureClass and
                         # its seven individuals; the failure-class vectors live in its tests/). The AUDIT
                         # below is of the floor and still holds: 0.1.22 is the
@@ -93,7 +111,8 @@ ikigai-vocab = "0.2.0"  # beside core 0.2.0, the streams release (ledger #2261);
 # The CLI's renderer-agnostic Engine — drives the in-page terminal — and its Resolver
 # seam. 0.1.4 is the async API (eval_async / issue_as_async) that lets the in-page
 # terminal drive the kernel on the JS event loop (M2).
-ikigai-engine = "0.2.1"  # the published head on core 0.2 (ledger #2261), in lockstep with
+ikigai-engine = "0.7.1"  # the published head on core 0.4 (ledger #4098), in lockstep with resolve
+                         # and wire. History: 0.2.1 was the head on core 0.2 (ledger #2261), in lockstep with
                          # resolve/wire (0.1.66 was the cli workspace of ledger #1546); tracks the
                          # ikigai-resolve floor below (it re-exports the
                          # Resolver seam this host drives). 0.1.13 gave the older need: the
@@ -102,7 +121,9 @@ ikigai-engine = "0.2.1"  # the published head on core 0.2 (ledger #2261), in loc
                          # ikigai-core; engine skipped 0.1.10-0.1.12, so 0.1.13 is at once
                          # the fix and the true minimum. (0.1.9 gave the older need:
                          # quote-aware named args — title="two words" — + pipe routing.)
-ikigai-resolve = "0.2.1"  # on core 0.2 (ledger #2261), the floor ikigai-engine 0.2.1, ikigai-wire
+ikigai-resolve = "0.7.1"  # on core 0.4 (ledger #4098), the floor ikigai-engine 0.7.1, ikigai-wire
+                          # 0.6.0 and ikigai-time 0.9.0 ask for. History: 0.2.1 was on core 0.2
+                          # (ledger #2261), the floor ikigai-engine 0.2.1, ikigai-wire
                           # 0.2.0 and ikigai-time 0.5.0 ask for. Under 0.1, a REAL floor (ledger
                           # #1546): `issue_as_with_context` and
                           # `issue_traced_as_with_context` run a wire v9 peer's `IssueWith` under the
@@ -118,7 +139,11 @@ ikigai-resolve = "0.2.1"  # on core 0.2 (ledger #2261), the floor ikigai-engine 
 # The on-wire Call/Reply protocol — the WASM codec (network demo) speaks it in the
 # browser, and the server speaks it on the other end. Same bytes as ikigai-ipc/quic.
 # Also reused for the module-session codec (encode/decode of ModuleCall/ModuleReply).
-ikigai-wire = "0.2.0"  # on core 0.2 (ledger #2261), still wire v9. A REAL floor: wire v9
+ikigai-wire = "0.6.0"  # on core 0.4 (ledger #4098), wire v11: v10 streams a body (the page sends
+                       # no streamed call, and the server is the same build), v11 adds
+                       # `WireError::GaveUp` (variant 14), rendered through core's Display like the
+                       # rest. Both are backward compatible down to v7. History: 0.2.0 was on core
+                       # 0.2 (ledger #2261), still wire v9. A REAL floor: wire v9
                        # (ledger #1546). `Call::IssueWith` (variant 5, a peer's
                        # run context) is what the server matches, and `WireError` gains tags 9-13
                        # (DepthExceeded, RetryAfter, OverBudget, Refused, Unsupported), which
@@ -134,9 +159,9 @@ ikigai-wire = "0.2.0"  # on core 0.2 (ledger #2261), still wire v9. A REAL floor
 # The dynamically-loadable module format. The host mounts the lazy XSLT module as a generic
 # WasmModuleSpace and services its HostCalls with serve_host_call; the session protocol + the
 # provenance sink live in the crate (the module runs run_session in its own wasm).
-ikigai-module = "0.5.1"  # the published head on core 0.2 (ledger #2261); the three module wasms
-                         # pages.yml builds are on 0.5 too, so they share this session protocol.
-                         # ⚠ `^0.5.1` is a CEILING (<0.6.0). 0.4.0 was a SECURITY floor (ledger #83):
+ikigai-module = "0.7.0"  # the published head on core 0.4 (ledger #4098); the three module wasms
+                         # pages.yml builds are on ^0.7.0 too, so they share this session protocol.
+                         # ⚠ `^0.7.0` is a CEILING (<0.8.0). (0.5.1 was the head on core 0.2.) 0.4.0 was a SECURITY floor (ledger #83):
                          # the host's
                          # `serve_host_call` clamps the capability a module's HostCall carries
                          # to the sessions in flight, so a module invoked under a narrow
@@ -161,7 +186,8 @@ ikigai-module = "0.5.1"  # the published head on core 0.2 (ledger #2261); the th
 # Outbound HTTP-client module (urn:http:get…). Already async + executor-agnostic
 # (HttpTransport seam), so the browser supplies a `fetch`-backed transport — same
 # module the native CLI drives with ureq. Unchanged for M2, so straight from crates.io.
-ikigai-http = "0.5.0"  # A CEILING crossing onto core 0.2 (ledger #2261): `HttpResponse::body` is an
+ikigai-http = "0.8.0"  # the published head on core 0.4 (ledger #4098); no source change here.
+                       # History: 0.5.0 was a CEILING crossing onto core 0.2 (ledger #2261): `HttpResponse::body` is an
                        # `HttpBody`, so both transports here hand over `body.into()` (the native one
                        # still refuses past MAX_BODY; the endpoint caps at 8 MiB on its own).
                        # ⚠ `^0.4.0` is also a CEILING (<0.5.0). 0.3.0 was a crossing too (ledger
@@ -179,7 +205,14 @@ ikigai-http = "0.5.0"  # A CEILING crossing onto core 0.2 (ledger #2261): `HttpR
                        # pinned the host-deny regression (ledger #874), core floor 0.1.86.
 # Interactive runbook module (urn:runbook:*) — same module the CLI links; local path
 # during dev, publish/git when stable (like engine/resolve).
-ikigai-runbook = "0.3.0"  # the published head on core 0.2 (ledger #2261). 0.3.0 adds a Bytes tab
+ikigai-runbook = "0.5.0"  # the release on core 0.4 for a consumer (ledger #4098): its NORMAL
+                          # dependencies are core ^0.4.0 and ikigai-fn ^0.12.0 (crates.io lists core
+                          # 0.3.5 as a DEV dependency, which a consumer never builds). 0.4 and 0.5 add
+                          # six tabs: Streams is served here; Two vocabularies, Domain & range,
+                          # Topics, The thread and Reasoner bounds read `urn:reason:*`/`urn:sparql:*`,
+                          # which this kernel does not link, so src/lib.rs hides them, and Selection
+                          # gained reasoner steps that answer `no endpoint resolved` here. History:
+                          # 0.3.0 was the head on core 0.2 (ledger #2261). 0.3.0 adds a Bytes tab
                           # (gzip; this kernel links no urn:compress:*, so src/lib.rs hides it) and
                           # `urn:runbook:script`, the tab strip's arrow keys, which dist/index.html
                           # resolves through the kernel (a roving tabindex needs it). (Ledger #1068,
@@ -203,11 +236,12 @@ ikigai-runbook = "0.3.0"  # the published head on core 0.2 (ledger #2261). 0.3.0
 # parses an RDF syntax and re-serializes to another (or to an HTML table), client-side
 # in wasm. The catalog + FOAF render to HTML through this. (SPARQL deferred to a later
 # slice.) Unpublished during dev — supplied by the [patch.crates-io] below.
-ikigai-rdf = "0.3.1"  # the published head on core 0.2 (ledger #2261). 0.2.5 (the 2026-10-14
+ikigai-rdf = "0.6.0"  # the published head on core 0.4 (ledger #4098). (0.3.1 on core 0.2, ledger
+                      # #2261.) 0.2.5 (the 2026-10-14
                       # wave): typed refusals; 0.2.0 names the space (ledger #987)
 # Content sniffing + sniff-and-dispatch (urn:sniff, urn:transrept:auto) — classify
 # opaque bytes and route them to the right transreptor, client-side.
-ikigai-sniff = "0.3.1"  # the published head on core 0.2 (ledger #2261), in step with rdf;
+ikigai-sniff = "0.6.0"  # the published head on core 0.4 (ledger #4098), in step with rdf;
                         # 0.2.0 names the space (ledger #987)
 # oneshot channel: the browser fetch transport confines the !Send `fetch` to a
 # spawn_local task and bridges the (Send) result back, so `HttpTransport::send` stays
@@ -227,12 +261,15 @@ wtransport = "0.7"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util", "time"] }  # time: the native smoke's bound
 # XSLT linked natively (the server can't lazy-load a wasm module). On wasm the host
 # instead lazy-loads `ikigai-xslt-module` (xrust kept OUT of the host wasm) — Phase 2.
-ikigai-xslt = "0.4.0"  # the published head on core 0.2 (ledger #2261), on xrust 2.3 (its floor
+ikigai-xslt = "0.10.1"  # the published head on core 0.4 (ledger #4098), on `ikigai-xrust`
+                       # 2.3.0-ikigai.3 (xrust 2.3.0 with ikigai's fixes, carried in the xslt
+                       # repository). pages.yml's XSLT_REV is this release's commit. History: 0.4.0
+                       # was the head on core 0.2 (ledger #2261), on xrust 2.3 (its floor
                        # now; 0.2.2 was capped below it, ledger #1492, #1505). 0.2.1's caller-XML
                        # bounds (ledger #916). pages.yml's XSLT_REV is this release's commit
 # JSON-LD operators linked natively (same reason as XSLT — no wasm lazy-load on the
 # server). On wasm the host lazy-loads the module instead (json-ld kept out of the host).
-ikigai-jsonld = "0.3.0"  # the published head on core 0.2 (ledger #2261); pages.yml's JSONLD_REV is
+ikigai-jsonld = "0.5.0"  # the published head on core 0.4 (ledger #4098); pages.yml's JSONLD_REV is
                          # this release's commit. 0.2.3 (the 2026-10-14 wave): a missing required input
                          # is a typed MissingArgument. 0.2.1 bounded JSON-LD nesting at 64, on
                          # a sized thread (ledger #1042). (0.1.1: compact
@@ -247,7 +284,7 @@ ikigai-jsonld = "0.3.0"  # the published head on core 0.2 (ledger #2261); pages.
 # `headers_names` are all older); ⚠ `^2.12.1` is also a CEILING (<3.0.0), and ureq 3 is a
 # rewrite with a different API, so that ceiling is deliberate.
 ureq = "2.12.1"
-ikigai-shacl = "0.5.0"  # the published head on core 0.2 (ledger #2261); pages.yml's SHACL_REV is
+ikigai-shacl = "0.7.0"  # the published head on core 0.4 (ledger #4098); pages.yml's SHACL_REV is
                         # this release's commit. 0.3.7 (the 2026-10-14 wave): typed refusals, and
                         # the subset validator's own overdue cap (ledger #1510).
                         # ★ SECURITY FLOOR 0.3.3 (ledger #1121, #1101, #1099). rudof evaluates a shape's
@@ -269,8 +306,8 @@ ikigai-shacl = "0.5.0"  # the published head on core 0.2 (ledger #2261); pages.y
                         # length when uppercased (rudof slices at an offset found in the
                         # uppercased text). tests/native_smoke.rs sends that deep query through
                         # the real binary and expects a report. Native only: on wasm rayon
-                        # runs on the current thread. Note `^0.5.0` is also a CEILING
-                        # (<0.6.0).
+                        # runs on the current thread. Note `^0.7.0` is also a CEILING
+                        # (<0.8.0).
                         # (History: 0.1.0 IS NOT BUILDABLE, so it was never a true floor. Its
                         # `shacl = "0.3"` caret admits rudof 0.3.17+, and 0.3.17 added a third
                         # argument (`&ShaclConfig`) to `validate()` — a SOURCE break shipped in
@@ -296,7 +333,8 @@ ikigai-shacl = "0.5.0"  # the published head on core 0.2 (ledger #2261); pages.y
 # The time transport — only the browser drives it here (the native server doesn't
 # need timed jobs). Its native ThreadTimer is cfg'd out on wasm; this lib supplies a
 # `setInterval`-backed TimerBackend instead.
-ikigai-time = "0.5.0"  # the published head on core 0.2 (ledger #2261). Source-breaking at 0.4: a job
+ikigai-time = "0.9.0"  # the published head on core 0.4 (ledger #4098); no source change here.
+                       # (0.5.0 was the head on core 0.2, ledger #2261.) Source-breaking at 0.4: a job
                        # fires under the capability it is scheduled with, clamped to the
                        # registry's ceiling, never root (ledger #79), so `schedule_persistent`
                        # takes one; the nav clock's job passes no scopes. 0.2.0 was the wasm fix: a completed job is stamped from the kernel's
@@ -326,16 +364,9 @@ web-sys = { version = "0.3", features = [
 # the walk opted in. 0.11.0 is on core 0.2 (ledger #2261) and runs FAILURES and DATATYPES by
 # default; the walk is clean under both (no own action states failure classes, and no own RDF
 # face writes a bare literal against a narrower ik: range). 0.12.0 adds BODIES and
-# BODY-INPUTS by default; the walk shares the kernel root for direct body probes.
-ikigai-conformance = "0.12.0"
-# The shared percent decoder (`ikigai_fn::html::percent_decode`, first published in
-# ikigai-fn 0.9.0), for tests/k_adapter.rs only: its `steps()` reads a `/k/` command the
-# way the page's `decodeURIComponent` does, which ikigai-runbook 0.5.1's percent-encoded
-# steps need (ledger #4093). Renamed and test-only on purpose: the host's own ikigai-fn
-# above stays at 0.7, because 0.8.0 changes compose's marker arguments, 0.7.2 adds an
-# endpoint the conformance walk pins as a decision, and ikigai-runbook 0.3.0 links ^0.7.
-# Fold this into the main dependency when the host takes ikigai-fn 0.9 or later.
-ikigai-fn-html = { package = "ikigai-fn", version = "0.9.0" }
+# BODY-INPUTS by default; the walk shares the kernel root for direct body probes. 0.15.0 is on
+# core 0.4 (ledger #4098); the walk is clean under it unchanged.
+ikigai-conformance = "0.15.0"
 # A scratch jail for the file module: the walk FIRES Sink/Delete, and the native
 # backend is std::fs, so the fixture must never be this repo's tree.
 tempfile = "3"

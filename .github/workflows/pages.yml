@@ -67,11 +67,21 @@ concurrency:
 # .cargo_vcs_info.json names (and its vX.Y.Z tag). xslt 0.4.0 requires xrust 2.3.0, which the
 # native lock holds, so the --precise step below pins 2.3.0; 0.2.2's `<2.3` cap could not take it.
 #
+# All three then moved with the native lock onto ikigai-core 0.4 (ledger #4098): xslt 0.10.1,
+# jsonld 0.5.0, shacl 0.7.0, each the commit its crates.io .cargo_vcs_info.json names (jsonld
+# and shacl also carry the vX.Y.Z tag; xslt 0.10.1 has no tag, so its SHA is the only handle).
+# Each builds on ikigai-module ^0.7.0, the line the host's lock holds.
+# xslt 0.8.0 and later build on `ikigai-xrust`, xrust 2.3.0 with ikigai's fixes, carried in the
+# xslt repository as a PATH dependency (crates/xrust) and published from the same tree. So the
+# module wasm builds the xrust of the very commit it pins, the code the native lock's
+# ikigai-xrust 2.3.0-ikigai.3 was published from, and the --precise step that kept the two in
+# step is gone: there is no registry xrust left in either graph to pin.
+#
 # To bump: replace the SHA, push, and let `smoke` vet the result. That is what it is for.
 env:
-  XSLT_REV: 83d7bbc5ed5c54277f04dd0495a309580ccf24ea    # ikigai-xslt 0.4.0 (tag v0.4.0)
-  JSONLD_REV: 74158d330e3c0c5b407f4053f943979c62927cdb  # ikigai-jsonld 0.3.0 (tag v0.3.0)
-  SHACL_REV: 64f3289789dae07d51bf030be51a1a823e326184   # ikigai-shacl 0.5.0 (tag v0.5.0)
+  XSLT_REV: 261fce446eda834fc843df94a19fe089733416b1    # ikigai-xslt 0.10.1 (xslt PR #62; no tag)
+  JSONLD_REV: 45427f3e85cdc4aa361c3789d280755ed071558e  # ikigai-jsonld 0.5.0 (tag v0.5.0)
+  SHACL_REV: 70e8b492198d1652b3e07601094c9b8d85a57ec1   # ikigai-shacl 0.7.0 (tag v0.7.0)
 
 jobs:
   build:
@@ -116,16 +126,9 @@ jobs:
           git -C module-src fetch -q --depth 1 origin "$XSLT_REV"
           git -C module-src checkout -q FETCH_HEAD
           test "$(git -C module-src rev-parse HEAD)" = "$XSLT_REV"
-          # Build against the xrust THIS repo's Cargo.lock holds, not a fresh resolve's.
-          # ikigai-xslt asks for `xrust = "2.1.0"`, and xrust 2.3.0 (2026-10-13) broke it
-          # inside that range: E0599 `populate_key_values`, E0533 `MissingNameSpace` became a
-          # struct variant. The native build was never exposed (it is locked); the module wasm
-          # resolved fresh and went red. Reading the version from Cargo.lock keeps the wasm
-          # module on the code the native build locks, the parity the header above states.
-          XRUST="$(grep -A1 '^name = "xrust"$' Cargo.lock | sed -n 's/^version = "\(.*\)"$/\1/p')"
-          test -n "$XRUST"
-          cargo generate-lockfile --manifest-path module-src/Cargo.toml
-          cargo update --manifest-path module-src/Cargo.toml -p xrust --precise "$XRUST"
+          # xrust is ikigai-xrust, a PATH dependency inside this checkout (crates/xrust), so
+          # the wasm builds the xrust of XSLT_REV itself; no registry xrust to pin (see the
+          # header above, ledger #4098).
           cargo build --release --lib --features module \
             --manifest-path module-src/Cargo.toml --target wasm32-unknown-unknown
           wasm-bindgen --target web --out-dir dist \
