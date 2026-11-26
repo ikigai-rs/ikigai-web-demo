@@ -27,18 +27,25 @@
 //!   can leave something for a later one to read.
 //! * `capability` (default none): the `urn:cap:` scopes the session holds. The engine is
 //!   SEALED at it, so `cap reset`, `login` and `logout` can never rise above what the page
-//!   declared; `cap <scope…>` can still narrow it.
+//!   declared; `cap <scope…>` can still narrow it, for the rest of that cell's run only.
+//!
+//! The cells share the KERNEL (its declared resources, its file jail and its cache), so a
+//! later cell reads what an earlier one wrote. They do not share the engine SESSION: each
+//! run starts a fresh one at the declared capability ([`Cells::begin_run`]), so a cell's
+//! `cap` narrowing, `cap seal` or open `:lisp` buffer ends with its run and never changes
+//! what the next cell does.
 //!
 //! Unknown keys, unknown modules and malformed entries are refused with a message, never
 //! ignored: a typo (`"capabilities"`) must not silently change what the cells may do.
 
 use std::collections::BTreeSet;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use ikigai_core::{
     ArgSpec, Capability, Description, Endpoint, EndpointSpace, Error, Exact, Fallback, Invocation,
-    Iri, Kernel, ReprType, Representation, Result, Space, UriTemplate, Verb,
+    Iri, Kernel, ReprType, Representation, Result, Space, Spawner, UriTemplate, Verb,
 };
 
 /// The modules a declaration may name, in the order the kernel consults them.
@@ -142,7 +149,7 @@ impl Declaration {
         self.modules.iter().any(|m| m == module)
     }
 
-    /// The declaration as the JSON the element reports in its `ikigai-cell-ready` event:
+    /// The declaration as the JSON the element reports in its `ikigai-kernel-ready` event:
     /// every default filled in, so a host reads what the kernel actually holds.
     pub fn to_json(&self) -> serde_json::Value {
         serde_json::json!({
@@ -363,7 +370,7 @@ pub fn build_kernel(declaration: &Declaration) -> Kernel {
     build_kernel_with(declaration, CELL_FS_ROOT, crate::default_transport())
 }
 
-/// The session every cell runs in: the declared scopes, sealed, so nothing typed into a
+/// A session for one cell's run: the declared scopes, sealed, so nothing typed into a
 /// cell can regain more.
 pub fn engine(
     resolver: impl ikigai_resolve::Resolver + 'static,
@@ -385,4 +392,93 @@ pub fn commands(code: &str) -> Vec<String> {
         .filter(|line| !line.is_empty() && !ikigai_engine::script::is_comment(line))
         .map(str::to_string)
         .collect()
+}
+
+/// The page's cells: ONE kernel, shared by every cell, and the session the current run
+/// evaluates in. [`begin_run`](Self::begin_run) replaces the session with a fresh one at
+/// the declared capability, so what one cell does to its session (`cap` narrowing,
+/// `cap seal`, an open `:lisp` buffer) lasts for its own run only, while what it does to
+/// the kernel (a `sink` to a declared resource or a file) is there for the next cell.
+pub struct Cells {
+    kernel: Arc<Kernel>,
+    declaration: Declaration,
+    spawner: Option<Arc<dyn Spawner>>,
+    session: std::cell::RefCell<Rc<ikigai_engine::Engine>>,
+}
+
+impl Cells {
+    /// The cells over `kernel`, built from `declaration`; `spawner`, if any, drives the
+    /// engine's forks and maps (the kernel's own fan-out is the kernel's to schedule).
+    pub fn new(
+        kernel: Arc<Kernel>,
+        declaration: Declaration,
+        spawner: Option<Arc<dyn Spawner>>,
+    ) -> Self {
+        let session = Rc::new(Self::session_for(&kernel, &declaration, &spawner));
+        Self {
+            kernel,
+            declaration,
+            spawner,
+            session: std::cell::RefCell::new(session),
+        }
+    }
+
+    fn session_for(
+        kernel: &Arc<Kernel>,
+        declaration: &Declaration,
+        spawner: &Option<Arc<dyn Spawner>>,
+    ) -> ikigai_engine::Engine {
+        let engine = engine(Arc::clone(kernel), declaration);
+        match spawner {
+            Some(spawner) => engine.with_spawner(Arc::clone(spawner)),
+            None => engine,
+        }
+    }
+
+    /// Start a cell's run: a fresh session at the declared capability, with no Lisp
+    /// buffer open. Returns it, as [`session`](Self::session) does until the next run.
+    pub fn begin_run(&self) -> Rc<ikigai_engine::Engine> {
+        let fresh = Rc::new(Self::session_for(
+            &self.kernel,
+            &self.declaration,
+            &self.spawner,
+        ));
+        *self.session.borrow_mut() = Rc::clone(&fresh);
+        fresh
+    }
+
+    /// The session the current run evaluates in.
+    pub fn session(&self) -> Rc<ikigai_engine::Engine> {
+        Rc::clone(&self.session.borrow())
+    }
+
+    /// The declaration the kernel was built from.
+    pub fn declaration(&self) -> &Declaration {
+        &self.declaration
+    }
+
+    /// A `localStorage` key changed outside this document (another tab of the origin):
+    /// when it is a file in the cell jail (`ikigai:fs:cell/<path>`), cut that file's thread
+    /// so a cached read, and anything over it, recomputes. Returns the thread it cut, if
+    /// any. Any other key (the demo's `ws` files among them) is not the cells' and is left
+    /// alone. The cut is the host's, made on the kernel directly: a cell's sealed session
+    /// does not hold `urn:cap:kernel:cut`, and must not need it.
+    pub fn storage_changed(&self, key: &str) -> Option<String> {
+        if !self.declaration.holds("fs") {
+            return None;
+        }
+        let thread = file_thread(key, CELL_FS_ROOT)?;
+        self.kernel.cut(thread.as_str());
+        Some(thread)
+    }
+}
+
+/// The thread (`urn:file:<path>`) of the file a `localStorage` key holds under the jail
+/// `root` (`ikigai:fs:<root>/<path>`), or `None` for a key outside that jail.
+pub fn file_thread(key: &str, root: &str) -> Option<String> {
+    let rel = key
+        .strip_prefix("ikigai:fs:")?
+        .strip_prefix(root)?
+        .strip_prefix('/')?;
+    (!rel.is_empty()).then(|| format!("urn:file:{rel}"))
 }

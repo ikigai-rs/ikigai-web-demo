@@ -1,11 +1,11 @@
 //! The kernel behind `<ikigai-cell>`, natively: the page's declaration
 //! (`<script type="application/ikigai-kernel+json">`) is the WHOLE of what the cells get.
 //!
-//! Each test parses a declaration with `cell::Declaration::parse`, builds the kernel and
-//! the sealed session from it with the same `cell::build_kernel_with` and `cell::engine`
-//! the page's `cellKernel` export calls, and runs cell lines through `Engine::eval`, the
-//! synchronous twin of the `cellEvalAsync` the element drives. One engine across several
-//! "cells" is the page's one shared kernel.
+//! Each test parses a declaration with `cell::Declaration::parse`, builds the kernel with
+//! the same `cell::build_kernel_with` the page's `cellKernel` export calls, and holds it in
+//! the same `cell::Cells`. A run starts with `Cells::begin_run`, as `cellBeginRun` does,
+//! and its lines go through `Engine::eval`, the synchronous twin of the `cellEvalAsync` the
+//! element drives. One `Cells` across several runs is the page's one shared kernel.
 //!
 //! The declaration's FORM is pinned twice over: against the example the README documents
 //! for a host, and against the one the packaged example page (`cell/example.html`) ships,
@@ -14,7 +14,7 @@
 use std::sync::Arc;
 
 use ikigai_engine::{Action, Engine};
-use ikigai_web_demo::cell::{self, Declaration, DeclaredResource, DEFAULT_TYPE};
+use ikigai_web_demo::cell::{self, Cells, Declaration, DeclaredResource, DEFAULT_TYPE};
 
 /// A transport that must never be reached: a declaration that does not grant the net
 /// is refused before any fetch.
@@ -30,10 +30,10 @@ impl ikigai_http::HttpTransport for Unreachable {
     }
 }
 
-/// One page's cells: the engine every cell shares, over a scratch jail.
+/// One page's cells: the kernel every cell shares, over a scratch jail.
 struct Page {
-    engine: Engine,
-    _jail: tempfile::TempDir,
+    cells: Cells,
+    jail: tempfile::TempDir,
 }
 
 fn page(json: &str) -> Page {
@@ -41,20 +41,33 @@ fn page(json: &str) -> Page {
     let jail = tempfile::tempdir().expect("tempdir");
     let kernel = cell::build_kernel_with(&declaration, jail.path(), Arc::new(Unreachable));
     Page {
-        engine: cell::engine(kernel, &declaration),
-        _jail: jail,
+        cells: Cells::new(Arc::new(kernel), declaration, None),
+        jail,
     }
 }
 
-/// Run one cell's code, line by line as the element does: the result of each line.
+/// One line in a session: its result, or an error naming a line that answered no output.
+fn line_result(engine: &Engine, line: &str) -> Result<String, String> {
+    match engine.eval(line) {
+        Action::Output(entry) => entry.result,
+        _ => Err(format!("`{line}` answered no output")),
+    }
+}
+
+/// Run one cell's code as the element does: a fresh run, then each command line in turn,
+/// stopping at the first error. The result of each line that ran.
 fn run(page: &Page, code: &str) -> Vec<Result<String, String>> {
-    cell::commands(code)
-        .iter()
-        .map(|line| match page.engine.eval(line) {
-            Action::Output(entry) => entry.result,
-            _ => Err(format!("`{line}` answered no output")),
-        })
-        .collect()
+    let session = page.cells.begin_run();
+    let mut results = Vec::new();
+    for line in cell::commands(code) {
+        let result = line_result(&session, &line);
+        let failed = result.is_err();
+        results.push(result);
+        if failed {
+            break;
+        }
+    }
+    results
 }
 
 fn ok(page: &Page, line: &str) -> String {
@@ -205,24 +218,143 @@ fn a_module_is_not_a_grant_the_capability_is() {
 fn nothing_typed_into_a_cell_regains_more_than_the_page_declared() {
     let page = page(r#"{ "modules": ["fs"], "capability": ["urn:cap:fs:read:."] }"#);
     // The session is sealed at the declaration: `cap reset` returns to it, not to root,
-    // and the typed `login` is refused outright.
+    // and the typed `login` is refused outright, within a run and in the runs after it.
     for line in ["cap reset", "login urn:cap:fs:write:.", "logout"] {
-        let _ = page.engine.eval(line);
-        assert_eq!(
-            page.engine.capability(),
-            page.engine.floor(),
-            "after `{line}`"
-        );
-        let refusal = err(&page, "sink urn:file:x.txt pwned");
+        let session = page.cells.begin_run();
+        let _ = session.eval(line);
+        assert_eq!(session.capability(), session.floor(), "after `{line}`");
+        let refusal = line_result(&session, "sink urn:file:x.txt pwned").unwrap_err();
         assert!(refusal.starts_with("denied"), "after `{line}`: {refusal}");
+        let refusal = err(&page, "sink urn:file:x.txt pwned");
+        assert!(
+            refusal.starts_with("denied"),
+            "a run after `{line}`: {refusal}"
+        );
     }
-    assert!(page.engine.is_sealed());
+    let session = page.cells.begin_run();
+    assert!(session.is_sealed());
+    assert_eq!(
+        session.floor(),
+        ikigai_core::Capability::scoped(["urn:cap:fs:read:."])
+    );
     let reset = ok(&page, "cap reset");
     assert!(reset.contains("sealed"), "{reset}");
-    // Narrowing still works.
-    let _ = page.engine.eval("cap urn:cap:fs:read:elsewhere");
-    let refusal = err(&page, "source urn:file:x.txt");
+    // Narrowing still works, within the run.
+    let refusal = run(
+        &page,
+        "cap urn:cap:fs:read:elsewhere\nsource urn:file:x.txt",
+    )
+    .pop()
+    .unwrap()
+    .unwrap_err();
     assert!(refusal.starts_with("denied"), "{refusal}");
+}
+
+#[test]
+fn a_cells_narrowing_lasts_for_its_own_run_only() {
+    let page =
+        page(r#"{ "modules": ["fs"], "capability": ["urn:cap:fs:write:.", "urn:cap:fs:read:."] }"#);
+    // Within the run, the narrowing holds from the line after it.
+    let narrowed = run(
+        &page,
+        "cap urn:cap:fs:read:.\nsink urn:file:notes.txt hello",
+    );
+    assert!(
+        narrowed[1].as_ref().unwrap_err().starts_with("denied"),
+        "{narrowed:?}"
+    );
+    // The next cell starts again from the declared capability.
+    assert!(ok(&page, "sink urn:file:notes.txt hello").contains("wrote 5 bytes"));
+    // So does the one after a cell that sealed itself narrower.
+    let _ = run(&page, "cap seal urn:cap:fs:read:elsewhere");
+    assert_eq!(ok(&page, "source urn:file:notes.txt"), "hello");
+    // And nothing typed widens past the declaration: no `delete` grant, in any run.
+    for code in [
+        "cap urn:cap:fs:delete:.\ndelete urn:file:notes.txt",
+        "delete urn:file:notes.txt",
+    ] {
+        let refusal = run(&page, code).pop().unwrap().unwrap_err();
+        assert!(refusal.starts_with("denied"), "{code}: {refusal}");
+    }
+}
+
+#[test]
+fn a_lisp_buffer_one_cell_leaves_open_does_not_swallow_the_next() {
+    let page = page(r#"{ "modules": ["fn"] }"#);
+    // `:lisp` opens the buffer and the form is buffered; the blank line that would submit
+    // it is never a command line, so the run ends with the buffer still open.
+    let opened = run(&page, ":lisp\n(+ 1 2)");
+    assert!(
+        opened[0].as_ref().unwrap().contains("lisp mode"),
+        "{opened:?}"
+    );
+    assert_eq!(opened[1], Err("`(+ 1 2)` answered no output".to_string()));
+    // The next cell answers, rather than being buffered as Lisp.
+    assert_eq!(ok(&page, "source urn:iki:fn:toUpper hello"), "HELLO");
+}
+
+#[test]
+fn another_tabs_write_to_a_cell_file_cuts_the_cached_read() {
+    let page =
+        page(r#"{ "modules": ["fs"], "capability": ["urn:cap:fs:write:.", "urn:cap:fs:read:."] }"#);
+    assert!(ok(&page, "sink urn:file:notes.txt first").contains("wrote"));
+    assert_eq!(ok(&page, "source urn:file:notes.txt"), "first");
+    assert_eq!(ok(&page, "cache urn:file:notes.txt"), "cached");
+    // The demo's `ws` files are not the cells': a change there cuts nothing here.
+    assert_eq!(page.cells.storage_changed("ikigai:fs:ws/notes.txt"), None);
+    assert_eq!(
+        page.cells.storage_changed("ikigai:fs:cellar/notes.txt"),
+        None
+    );
+    assert_eq!(ok(&page, "cache urn:file:notes.txt"), "cached");
+    // Another tab writes the file behind the kernel's back. The storage event for the
+    // cell segment cuts its thread, and the next read recomputes from the new value.
+    std::fs::write(page.jail.path().join("notes.txt"), "second").unwrap();
+    assert_eq!(
+        page.cells
+            .storage_changed("ikigai:fs:cell/notes.txt")
+            .as_deref(),
+        Some("urn:file:notes.txt")
+    );
+    assert_eq!(ok(&page, "cache urn:file:notes.txt"), "not cached");
+    assert_eq!(ok(&page, "source urn:file:notes.txt"), "second");
+}
+
+#[test]
+fn a_storage_key_names_a_file_only_under_its_own_jail() {
+    assert_eq!(
+        cell::file_thread("ikigai:fs:cell/a/b.txt", cell::CELL_FS_ROOT).as_deref(),
+        Some("urn:file:a/b.txt")
+    );
+    assert_eq!(
+        cell::file_thread("ikigai:fs:ws/a.txt", "ws").as_deref(),
+        Some("urn:file:a.txt")
+    );
+    for key in [
+        "ikigai:fs:ws/a.txt",
+        "ikigai:fs:cellar/a.txt",
+        "ikigai:fs:cell/",
+        "other",
+    ] {
+        assert_eq!(cell::file_thread(key, cell::CELL_FS_ROOT), None, "{key}");
+    }
+    // A page that declared no file module has no cell files to cut.
+    assert_eq!(
+        page("{}").cells.storage_changed("ikigai:fs:cell/a.txt"),
+        None
+    );
+}
+
+#[test]
+fn the_cell_docs_name_the_event_the_element_fires() {
+    let source = include_str!("../src/cell.rs");
+    let element = include_str!("../dist/ikigai-cell.js");
+    let readme = include_str!("../README.md");
+    assert!(element.contains("'ikigai-kernel-ready'"));
+    assert!(source.contains("`ikigai-kernel-ready` event"));
+    for text in [source, readme, element] {
+        assert!(!text.contains("ikigai-cell-ready"));
+    }
 }
 
 #[test]

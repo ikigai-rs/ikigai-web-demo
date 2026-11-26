@@ -1829,8 +1829,13 @@ thread_local! {
         // enforced in the browser. The jail (`..` segments) is the harder floor
         // beneath it, refused even at root.
         define_cap_profiles(&engine);
+        DEMO_ENGINE_BUILT.with(|built| built.set(true));
         Rc::new(engine)
     };
+    // Whether `ENGINE` has been built in this document: the storage watcher cuts the demo's
+    // threads only then, rather than building the whole demo kernel to cut a thread no
+    // read has cached (on a cell page, which never builds it at all).
+    static DEMO_ENGINE_BUILT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// The friendly capability profiles the in-page terminal offers — `cap read-only` is
@@ -1853,15 +1858,22 @@ pub fn start() {
     install_storage_watcher();
 }
 
-/// Watch `localStorage` for **out-of-band** workspace-file changes — another tab of
-/// this origin, or page JavaScript — and cut the corresponding golden thread, so a
-/// cached read (and any composite over it) recomputes. The browser's analogue of the
-/// CLI's filesystem watcher.
+/// Watch `localStorage` for **out-of-band** file changes — another tab of this origin,
+/// or page JavaScript — and cut the corresponding golden thread, so a cached read (and
+/// any composite over it) recomputes. The browser's analogue of the CLI's filesystem
+/// watcher.
+///
+/// Each kernel watches its OWN jail, and only once it exists: the demo's kernel its `ws`
+/// files (`ikigai:fs:ws/<path>`), a cell page's kernel its `cell` files
+/// (`ikigai:fs:cell/<path>`, see [`cell::Cells::storage_changed`]). A change to one never
+/// builds the other: a cell page never builds the whole demo kernel because another tab
+/// wrote a workspace file, and the demo page never builds a cell kernel.
 ///
 /// The cross-tab `storage` event fires in *other* documents of the origin (same-tab
-/// writes already go through the kernel's auto-cut). The cut itself goes through
+/// writes already go through the kernel's auto-cut). The demo's cut goes through
 /// `urn:kernel:cut` — the cut-as-resource — by evaluating one engine command, so no
-/// direct kernel handle is needed.
+/// direct kernel handle is needed; the cells' cut is made on their kernel, since a
+/// cell's sealed session holds no `urn:cap:kernel:cut`.
 #[cfg(target_family = "wasm")]
 fn install_storage_watcher() {
     use wasm_bindgen::JsCast;
@@ -1870,16 +1882,22 @@ fn install_storage_watcher() {
     };
     let on_storage = wasm_bindgen::closure::Closure::<dyn Fn(web_sys::StorageEvent)>::new(
         |event: web_sys::StorageEvent| {
-            // Keys are `ikigai:fs:ws/<path>`; the thread is `urn:file:<path>`.
-            if let Some(rel) = event
-                .key()
-                .as_deref()
-                .and_then(|k| k.strip_prefix("ikigai:fs:ws/"))
+            // `key()` is `None` when another tab cleared all of storage: nothing names a
+            // thread to cut.
+            let Some(key) = event.key() else {
+                return;
+            };
+            if let Some(cells) = CELL.with(|slot| slot.borrow().as_ref().map(|(_, c)| Rc::clone(c)))
             {
-                let cut = format!("sink urn:kernel:cut urn:file:{rel}");
-                ENGINE.with(|engine| {
-                    let _ = engine.eval(&cut);
-                });
+                cells.storage_changed(&key);
+            }
+            if DEMO_ENGINE_BUILT.with(std::cell::Cell::get) {
+                if let Some(thread) = cell::file_thread(&key, "ws") {
+                    let cut = format!("sink urn:kernel:cut {thread}");
+                    ENGINE.with(|engine| {
+                        let _ = engine.eval(&cut);
+                    });
+                }
             }
         },
     );
@@ -1917,13 +1935,15 @@ pub fn eval_line_async(line: String) -> js_sys::Promise {
 // --- <ikigai-cell>: the embeddable cell's kernel -----------------------------
 //
 // A page that embeds `<ikigai-cell>` declares its kernel once (see `cell`); every cell on
-// the page then runs on that ONE kernel and session, apart from the demo's `ENGINE`. The
-// element calls `cellKernel` with the declaration's text before the first run and
-// `cellEvalAsync` for each line of a cell's code.
+// the page then runs on that ONE kernel, apart from the demo's `ENGINE`, each run in a
+// session of its own. The element calls `cellKernel` with the declaration's text before
+// the first run, `cellBeginRun` at the start of every run, and `cellEvalAsync` for each
+// line of a cell's code.
 
 thread_local! {
-    // The declaration text the kernel was built from, beside the engine it drives.
-    static CELL: std::cell::RefCell<Option<(String, Rc<ikigai_engine::Engine>)>> =
+    // The declaration text the kernel was built from, beside the page's cells: the one
+    // kernel they share and the session the current run evaluates in.
+    static CELL: std::cell::RefCell<Option<(String, Rc<cell::Cells>)>> =
         const { std::cell::RefCell::new(None) };
 }
 
@@ -1946,26 +1966,46 @@ pub fn cell_kernel(declaration: String) -> std::result::Result<String, JsValue> 
         } else {
             let kernel = cell::build_kernel(&parsed);
             #[cfg(target_family = "wasm")]
-            let engine = {
+            let cells = {
                 let spawner = Arc::new(WasmSpawner::default());
                 let kernel =
                     kernel.into_scheduled(Arc::clone(&spawner) as Arc<dyn ikigai_core::Spawner>);
-                cell::engine(kernel, &parsed).with_spawner(spawner as Arc<dyn ikigai_core::Spawner>)
+                cell::Cells::new(
+                    kernel,
+                    parsed.clone(),
+                    Some(spawner as Arc<dyn ikigai_core::Spawner>),
+                )
             };
             #[cfg(not(target_family = "wasm"))]
-            let engine = cell::engine(kernel, &parsed);
-            *slot = Some((declaration.clone(), Rc::new(engine)));
+            let cells = cell::Cells::new(Arc::new(kernel), parsed.clone(), None);
+            *slot = Some((declaration.clone(), Rc::new(cells)));
         }
         Ok(parsed.to_json().to_string())
     })
 }
 
-/// Run one line of a cell's code on the page's cell kernel, as [`eval_line_async`] does on
-/// the demo's: a `Promise<string>` of the same `{ kind, text, cache }` JSON. Refused until
-/// [`cell_kernel`] has built the kernel.
+/// Start one cell's run on the page's cell kernel: a fresh session at the declared
+/// capability, with no `:lisp` buffer open (see [`cell::Cells::begin_run`]). The element
+/// calls it before the first line of every run, so a cell's `cap` narrowing or open Lisp
+/// buffer never reaches the next cell; the kernel, and what earlier cells wrote, stay.
+/// Refused until [`cell_kernel`] has built the kernel.
+#[wasm_bindgen(js_name = cellBeginRun)]
+pub fn cell_begin_run() -> std::result::Result<(), JsValue> {
+    CELL.with(|slot| match slot.borrow().as_ref() {
+        Some((_, cells)) => {
+            cells.begin_run();
+            Ok(())
+        }
+        None => Err(JsValue::from_str("no cell kernel: call cellKernel first")),
+    })
+}
+
+/// Run one line of a cell's code in the current run's session (see [`cell_begin_run`]),
+/// as [`eval_line_async`] does on the demo's: a `Promise<string>` of the same
+/// `{ kind, text, cache }` JSON. Refused until [`cell_kernel`] has built the kernel.
 #[wasm_bindgen(js_name = cellEvalAsync)]
 pub fn cell_eval_async(line: String) -> js_sys::Promise {
-    let engine = CELL.with(|slot| slot.borrow().as_ref().map(|(_, e)| Rc::clone(e)));
+    let engine = CELL.with(|slot| slot.borrow().as_ref().map(|(_, cells)| cells.session()));
     wasm_bindgen_futures::future_to_promise(async move {
         let Some(engine) = engine else {
             return Err(JsValue::from_str("no cell kernel: call cellKernel first"));

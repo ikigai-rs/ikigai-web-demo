@@ -186,6 +186,10 @@ export class IkigaiCell extends HTMLElement {
     let ok = true;
     try {
       await pageKernel();
+      // Every run starts a fresh session at the page's declared capability: a `cap`
+      // narrowing or an open `:lisp` buffer lasts for this run only. The kernel, and what
+      // earlier cells wrote to it, stays.
+      glue.cellBeginRun();
       const commands = JSON.parse(glue.cellCommands(code));
       emit(this, 'ikigai-cell-run', { code, commands });
       for (const command of commands) {
