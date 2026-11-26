@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ikigai cells: an example host</title>
+<!-- The template for the packaged example (scripts/package-cell.sh writes it to
+     dist/cell/index.html with the hashed file name filled in). It plays a slide deck: a
+     document-level key handler moves between "slides" on the arrow keys, as reveal.js
+     does, so the smoke suite can check that a focused cell keeps its keys. -->
+<style>
+  :root { --bg: #fdfdf8; --fg: #1d1d1b; --accent: #0b5f8a; --code-bg: #f1f3f5; --code-fg: #1d1d1b; --font-mono: ui-monospace, Menlo, monospace; }
+  body { background: var(--bg); color: var(--fg); font: 18px/1.6 system-ui, sans-serif; max-width: 860px; margin: 32px auto; padding: 0 20px; }
+  h1, h2 { color: var(--accent); }
+  .slide { border: 1px solid var(--accent); border-radius: 10px; padding: 4px 20px 16px; margin: 18px 0; }
+  .slide:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+  #position { font-weight: 600; }
+</style>
+<script type="application/ikigai-kernel+json">
+{
+  "modules": ["fn"],
+  "resources": [
+    { "iri": "urn:deck:greeting", "type": "text/plain", "text": "hello, slides" },
+    { "iri": "urn:deck:note", "writable": true }
+  ],
+  "capability": []
+}
+</script>
+<script type="module" src="./__IKIGAI_CELL_JS__"></script>
+</head>
+<body>
+<main id="deck" class="deck" tabindex="-1">
+  <h1>ikigai cells</h1>
+  <p>Slide <span id="position">1</span>. The arrow keys move between slides, except inside a cell.</p>
+  <section class="slide" aria-labelledby="s1">
+    <h2 id="s1">Read a resource the page declares</h2>
+    <ikigai-cell>source urn:deck:greeting | urn:iki:fn:toUpper</ikigai-cell>
+  </section>
+  <section class="slide" aria-labelledby="s2">
+    <h2 id="s2">Leave something for the next cell</h2>
+    <ikigai-cell>
+# The page declared urn:deck:note writable.
+sink urn:deck:note written on slide two
+</ikigai-cell>
+    <ikigai-cell label="Read it back">source urn:deck:note</ikigai-cell>
+  </section>
+  <section class="slide" aria-labelledby="s3">
+    <h2 id="s3">Nothing the page did not declare</h2>
+    <ikigai-cell>source urn:file:notes.txt</ikigai-cell>
+  </section>
+</main>
+<script>
+  // The host's own keys, on the document as reveal.js binds them.
+  let slide = 1;
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+      slide = Math.max(1, slide + (e.key === 'ArrowRight' ? 1 : -1));
+      document.getElementById('position').textContent = String(slide);
+    }
+  });
+</script>
+</body>
+</html>

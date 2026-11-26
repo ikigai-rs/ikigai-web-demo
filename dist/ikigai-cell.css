@@ -1,0 +1,93 @@
+/* <ikigai-cell>, styled from the host's color tokens. Each token falls back to the next and
+   then to a default that passes WCAG AA contrast on its own:
+     --code-bg, then --bg        the cell's background
+     --code-fg, then --fg        its text
+     --accent                    the Run button, the focus ring and the frame
+     --font-mono                 the code and output face
+   Errors are marked by weight and a label, not by color alone, so any host palette whose
+   foreground passes against its background keeps them readable. */
+ikigai-cell {
+  --ikc-bg: var(--code-bg, var(--bg, #0f1419));
+  --ikc-fg: var(--code-fg, var(--fg, #d7dde3));
+  --ikc-accent: var(--accent, #6cb6ff);
+  --ikc-font: var(--font-mono, ui-monospace, Menlo, Consolas, monospace);
+  display: block;
+  margin: 0.8em 0;
+  text-align: left;
+}
+ikigai-cell .ikc-frame {
+  background: var(--ikc-bg);
+  color: var(--ikc-fg);
+  border: 1px solid var(--ikc-accent);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font: 0.85em/1.5 var(--ikc-font);
+}
+ikigai-cell .ikc-code {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  resize: vertical;
+  margin: 0;
+  padding: 4px 6px;
+  background: transparent;
+  color: inherit;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font: inherit;
+  white-space: pre;
+  overflow-x: auto;
+}
+ikigai-cell .ikc-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin: 6px 0;
+}
+ikigai-cell .ikc-run {
+  background: transparent;
+  color: var(--ikc-accent);
+  border: 1px solid var(--ikc-accent);
+  border-radius: 6px;
+  padding: 2px 14px;
+  font: 600 1em/1.6 var(--ikc-font);
+  cursor: pointer;
+}
+ikigai-cell .ikc-run:hover { background: color-mix(in srgb, var(--ikc-accent) 15%, transparent); }
+ikigai-cell .ikc-code:focus-visible,
+ikigai-cell .ikc-run:focus-visible {
+  outline: 3px solid var(--ikc-accent);
+  outline-offset: 2px;
+}
+ikigai-cell .ikc-hint { font-size: 0.85em; }
+ikigai-cell .ikc-output:empty { display: none; }
+ikigai-cell .ikc-output {
+  border-top: 1px solid var(--ikc-accent);
+  padding-top: 6px;
+}
+ikigai-cell .ikc-line {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+}
+ikigai-cell .ikc-error { font-weight: 700; }
+ikigai-cell .ikc-error::before { content: "error · "; }
+ikigai-cell .ikc-cache::before { content: "["; }
+ikigai-cell .ikc-cache::after { content: "]"; }
+ikigai-cell .ikc-cache,
+ikigai-cell .ikc-hint,
+ikigai-cell .ikc-help { font-style: italic; }
+/* A brief mark when fresh output arrives; no motion at all when the reader asks for none. */
+ikigai-cell .ikc-output.ikc-fresh { animation: ikc-fresh 0.6s ease-out; }
+@keyframes ikc-fresh {
+  from { box-shadow: inset 3px 0 0 var(--ikc-accent); }
+  to { box-shadow: inset 0 0 0 transparent; }
+}
+ikigai-cell .ikc-run[aria-busy="true"] { animation: ikc-busy 1s ease-in-out infinite; }
+@keyframes ikc-busy { 50% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--ikc-accent) 40%, transparent); } }
+@media (prefers-reduced-motion: reduce) {
+  ikigai-cell .ikc-output.ikc-fresh,
+  ikigai-cell .ikc-run[aria-busy="true"] { animation: none; }
+}
