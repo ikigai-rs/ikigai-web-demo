@@ -9,6 +9,9 @@ const BASE = `http://127.0.0.1:${PORT}`;
 module.exports = defineConfig({
   testDir: __dirname,
   testMatch: '*.spec.js',
+  // Package <ikigai-cell> from the built tree into dist/cell/ first: cell.spec.js runs the
+  // hashed files a host would copy (scripts/package-cell.sh).
+  globalSetup: require.resolve('./package-cell.setup.js'),
   // The test waits on a 1s job ticking twice and on the wasm fetch+instantiate; 90s is
   // slack for a cold CI runner, not an expected duration (it runs in ~15s warm).
   timeout: 90_000,

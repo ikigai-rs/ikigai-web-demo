@@ -137,6 +137,10 @@
 
 <script type="module">
 import init, { evalLineAsync, hostCall } from './ikigai_web_demo.js?v=__BUILD__';
+// The shared code under <ikigai-cell>, the embeddable cell: the terminal below renders the
+// kernel's answers with it. Importing it defines <ikigai-cell> too, which this page does
+// not use; it loads no glue and builds no kernel until a cell runs.
+import { renderAction } from './ikigai-cell.js?v=__BUILD__';
 // The dynamically-loaded XSLT module (urn:xslt:transform). The ~2.4 MB module wasm
 // (xrust) is fetched only on the first call — opening the Catalog page — not in the
 // host's initial load. The two wasm instances speak the real module-session protocol:
@@ -200,15 +204,16 @@ class IkigaiCli extends HTMLElement {
       else { this.hpos = this.history.length; this.input.value = ''; }
     }
   }
+  // The kernel's answer becomes transcript lines through `renderAction`, the code
+  // <ikigai-cell> renders its output with (dist/ikigai-cell.js).
   async run(line) {
     let r;
     try { r = JSON.parse(await evalLineAsync(line)); }
     catch (err) { this.print('internal error: ' + err, 'error'); return; }
-    if (r.kind === 'noop') return;
-    if (r.kind === 'clear') { this.transcript.replaceChildren(); return; } // wipe output, keep history
-    if (r.kind === 'quit') { this.print('(quit — reload the page to restart)', 'hint'); this.input.disabled = true; return; }
-    if (r.text) this.print(r.text, r.kind === 'error' ? 'error' : (r.kind === 'help' ? 'help' : 'out'));
-    if (r.cache) this.print(r.cache, 'cache');
+    const { action, lines } = renderAction(r);
+    if (action === 'clear') { this.transcript.replaceChildren(); return; } // wipe output, keep history
+    if (action === 'quit') { this.print('(quit — reload the page to restart)', 'hint'); this.input.disabled = true; return; }
+    for (const { text, cls } of lines) this.print(text, cls);
   }
   print(text, cls) {
     const pre = document.createElement('pre');

@@ -112,6 +112,135 @@ command. It expects to drive its own `index.html` at the crate root, whereas thi
 demo ships a hand-written `dist/index.html` with an explicit ES-module import — so
 the three-step recipe above matches what's in the repo.
 
+## Embed a kernel cell: `<ikigai-cell>`
+
+The same Engine, packaged for any page that wants runnable ikigai in it: a slide deck, a
+course page, a book chapter. A cell shows its code (its own text content, editable), a
+**Run** button and an output region below. Every cell on a page runs on **one** kernel,
+so a later cell reads what an earlier one wrote. The kernel holds only what the page
+declares, and every cell runs under only the capability the page grants. No server is
+involved, and no file is fetched from any host but the page's own.
+
+```html
+<script type="application/ikigai-kernel+json">
+{ "modules": ["fn"], "resources": [{ "iri": "urn:deck:note", "writable": true }] }
+</script>
+<script type="module" src="ikigai/ikigai-cell.<hash>.js"></script>
+
+<ikigai-cell>source urn:iki:fn:toUpper hello</ikigai-cell>
+<ikigai-cell>sink urn:deck:note remember this</ikigai-cell>
+<ikigai-cell label="Read it back">source urn:deck:note</ikigai-cell>
+```
+
+### The files to copy
+
+`scripts/package-cell.sh` writes the package into `dist/cell/`. Run steps 1 and 2 of
+[Run it](#run-it) first. The smoke suite runs the script over the CI-built tree before its
+tests (`smoke/package-cell.setup.js`), so `pages.yml` tests the package on every push. It
+does not deploy it yet: the package is built only after the Pages artifact is uploaded.
+Copy **every file** in `dist/cell/` except `index.html` into one directory of your site:
+
+| File | What it is |
+|---|---|
+| `ikigai-cell.<hash>.js` | The element: the one file your page loads (`<script type="module">`). |
+| `ikigai-cell.<hash>.css` | Its stylesheet. The element adds the `<link>` itself, next to its own URL. |
+| `ikigai_web_demo.<hash>.js` | The wasm-bindgen glue the element imports. |
+| `ikigai_web_demo_bg.<hash>.wasm` | The kernel (about 6.3 MB uncompressed). Serve it as `application/wasm`. |
+| `manifest.json` | The hashed name of each file. `entry` names the one to load. |
+
+Each `<hash>` is the first 16 hex digits of the file's SHA-256, so a host can cache them
+forever. The files find each other by relative URL, so keep them together and unrenamed.
+`index.html` is the example host page the smoke suite runs: a small deck whose arrow keys
+change slides, the way reveal.js binds them. The kernel loads when a cell first runs, not
+when the page loads.
+
+### The declaration
+
+A page declares its kernel once, as a JSON object in a
+`<script type="application/ikigai-kernel+json">` block. A page with no block gets the
+empty declaration: nothing bound, nothing granted. Two blocks are an error.
+
+<!-- ikigai-cell declaration -->
+```json
+{
+  "modules": ["fn"],
+  "resources": [
+    { "iri": "urn:deck:greeting", "text": "hello, slides" },
+    { "iri": "urn:deck:note", "writable": true }
+  ],
+  "capability": []
+}
+```
+
+- **`modules`** (default none) names the crates the kernel holds, chosen from `fn`
+  (ikigai-fn: `toUpper`, `compose`, `each` and the rest), `rdf` (`urn:rdf:transrept`),
+  `sniff`, `vocab` (`urn:ikigai:vocab`), `fs` (`urn:file:*`) and `http` (`urn:http:*`, on the
+  browser's `fetch`). Declaring a module does not grant it: `fs` still needs
+  `urn:cap:fs:*` scopes and `http` needs `urn:cap:net:*`. The file module is jailed to its own
+  `localStorage` segment (`ikigai:fs:cell/<path>`), apart from the demo page's `ws`, and it
+  persists across reloads of the origin. XSLT, JSON-LD and SHACL are not offered in a cell
+  yet: they are lazy module wasms with loaders of their own.
+- **`resources`** (default none) are resources the page serves from memory. Each one takes
+  an `iri`, a `type` (default `text/plain;charset=utf-8`) and its `text` (default empty).
+  A cell may `sink` into one only if it says `"writable": true`. Values live as long as the
+  page.
+- **`capability`** (default none) lists the `urn:cap:` scopes every cell runs under. The
+  session is **sealed** there, so `cap reset`, `login` and `logout` typed into a cell can
+  never rise above it, while `cap <scope…>` can still narrow it. There is no way to declare
+  root.
+
+An unknown key, an unknown module, a scope outside `urn:cap:` or a malformed resource is
+refused with a reason, which every cell shows when it runs. A typo such as
+`"capabilities"` is never silently ignored. `tests/cell_kernel.rs` pins this form against
+the example above and against the example page.
+
+### The element
+
+A cell's code is its text content, one command per line, in the terminal's grammar
+(pipelines `|`, map `..`, fork `( a ; b )`, `key=value` arguments). Blank lines and `#`
+comments are skipped. Run executes the lines in order and stops at the first error. Runs are
+serialized across the page in the order they are asked for.
+
+| Attribute | Effect |
+|---|---|
+| `label` | The cell's accessible name (default `ikigai cell N`). |
+| `readonly` | The code cannot be edited. |
+| `autorun` | Run once when the cell is inserted. |
+| `escape-to` | The id of the element Escape moves focus to. |
+
+Keyboard: **Run** is a real `<button>`, reached with Tab and pressed with Enter or Space.
+**Ctrl+Enter** (or **⌘+Enter**) in the code runs it. Every key event inside a cell stops
+there, so a host that binds keys on the document (reveal.js turns arrow keys into slide
+changes) never sees them. **Escape** returns focus to the host: to the `escape-to` element,
+else the nearest ancestor with a `tabindex`, else the document. The output is an
+`aria-live="polite"` status region, replaced on each run. Its fresh-output mark and the
+running indicator are the cell's only motion, and both stop under
+`prefers-reduced-motion: reduce`.
+
+Colors and type come from the host's tokens, each falling back to the next:
+`--code-bg` then `--bg` for the background, `--code-fg` then `--fg` for the text,
+`--accent` for the frame, the button and the focus ring, and `--font-mono` for the face.
+With none set, the defaults pass WCAG AA contrast on their own. Errors are marked by weight
+and an `error ·` label, never by color alone.
+
+### Events
+
+All of them bubble and are `composed`.
+
+| Event | Fired on | `detail` |
+|---|---|---|
+| `ikigai-kernel-ready` | `document`, once | `{ declaration }`: what the kernel holds, every default filled in |
+| `ikigai-kernel-error` | `document`, once | `{ message }`: why the wasm or the declaration was refused |
+| `ikigai-cell-run` | the cell | `{ code, commands }`: the code, and the command lines about to run |
+| `ikigai-cell-result` | the cell | `{ ok, results }`: one `{ command, kind, text, cache }` per line run |
+| `ikigai-cell-escape` | the cell | `{}`: Escape handed focus back to the host |
+
+The element also exposes `run()`, which returns a promise of the same `{ ok, results }`.
+
+The demo page's terminal (`<ikigai-cli>`) renders its answers with the same code
+(`renderAction`, exported by `dist/ikigai-cell.js`). It runs on the demo's own kernel, not
+on a cell kernel.
+
 ## Network demo: pull the page over WebTransport
 
 The page above hosts the kernel *in the browser*. The companion demo
@@ -202,6 +331,9 @@ refuses is a typed `Denied`, before anything touches the disk.
   `ikigai-wire`), reusing the same `build_kernel()` so it composes the same page.
 - `dist/index.html` — the in-browser demo (one `compose('urn:data:page')` → body).
 - `dist/net.html` — the network demo (pull `urn:data:page` over WebTransport).
+- `src/cell.rs`, `dist/ikigai-cell.js`, `dist/ikigai-cell.css`, `cell/example.html`,
+  `scripts/package-cell.sh` — the embeddable `<ikigai-cell>`: its kernel declaration,
+  the element, its stylesheet, the example host page and the packaging script.
   The committed files under `dist/`; the `.js`/`.wasm` are generated and gitignored.
 
 ## Accessibility

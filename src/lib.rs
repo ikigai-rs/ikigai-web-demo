@@ -23,6 +23,7 @@ use ikigai_vocab::TurtleRenderer;
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 
+pub mod cell;
 #[cfg(not(target_family = "wasm"))]
 mod native_fetch;
 #[cfg(not(target_family = "wasm"))]
@@ -1911,6 +1912,75 @@ pub fn eval_line_async(line: String) -> js_sys::Promise {
             engine.eval_async(&line).await,
         )))
     })
+}
+
+// --- <ikigai-cell>: the embeddable cell's kernel -----------------------------
+//
+// A page that embeds `<ikigai-cell>` declares its kernel once (see `cell`); every cell on
+// the page then runs on that ONE kernel and session, apart from the demo's `ENGINE`. The
+// element calls `cellKernel` with the declaration's text before the first run and
+// `cellEvalAsync` for each line of a cell's code.
+
+thread_local! {
+    // The declaration text the kernel was built from, beside the engine it drives.
+    static CELL: std::cell::RefCell<Option<(String, Rc<ikigai_engine::Engine>)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Build the page's cell kernel from its declaration (the JSON text of its
+/// `<script type="application/ikigai-kernel+json">` block; empty for none) and return the
+/// declaration with its defaults filled in, as JSON. A page has one cell kernel: calling
+/// this again with the same text returns the same answer, and with a different text is
+/// refused, so a second declaration can never quietly change what the cells run under.
+#[wasm_bindgen(js_name = cellKernel)]
+pub fn cell_kernel(declaration: String) -> std::result::Result<String, JsValue> {
+    let parsed = cell::Declaration::parse(&declaration).map_err(|e| JsValue::from_str(&e))?;
+    CELL.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        if let Some((built, _)) = slot.as_ref() {
+            if *built != declaration {
+                return Err(JsValue::from_str(
+                    "this page's cell kernel is already built from another declaration",
+                ));
+            }
+        } else {
+            let kernel = cell::build_kernel(&parsed);
+            #[cfg(target_family = "wasm")]
+            let engine = {
+                let spawner = Arc::new(WasmSpawner::default());
+                let kernel =
+                    kernel.into_scheduled(Arc::clone(&spawner) as Arc<dyn ikigai_core::Spawner>);
+                cell::engine(kernel, &parsed).with_spawner(spawner as Arc<dyn ikigai_core::Spawner>)
+            };
+            #[cfg(not(target_family = "wasm"))]
+            let engine = cell::engine(kernel, &parsed);
+            *slot = Some((declaration.clone(), Rc::new(engine)));
+        }
+        Ok(parsed.to_json().to_string())
+    })
+}
+
+/// Run one line of a cell's code on the page's cell kernel, as [`eval_line_async`] does on
+/// the demo's: a `Promise<string>` of the same `{ kind, text, cache }` JSON. Refused until
+/// [`cell_kernel`] has built the kernel.
+#[wasm_bindgen(js_name = cellEvalAsync)]
+pub fn cell_eval_async(line: String) -> js_sys::Promise {
+    let engine = CELL.with(|slot| slot.borrow().as_ref().map(|(_, e)| Rc::clone(e)));
+    wasm_bindgen_futures::future_to_promise(async move {
+        let Some(engine) = engine else {
+            return Err(JsValue::from_str("no cell kernel: call cellKernel first"));
+        };
+        Ok(JsValue::from_str(&eval_to_json(
+            engine.eval_async(&line).await,
+        )))
+    })
+}
+
+/// The command lines a cell's code holds, as a JSON array of strings: each non-blank
+/// line that is not a `#` comment, trimmed (see [`cell::commands`]).
+#[wasm_bindgen(js_name = cellCommands)]
+pub fn cell_commands(code: String) -> String {
+    serde_json::Value::from(cell::commands(&code)).to_string()
 }
 
 /// The host end of a dynamically-loaded **module's session**: service one `HostCall`. The

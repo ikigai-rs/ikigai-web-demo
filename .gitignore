@@ -10,6 +10,9 @@
 !/dist/jsonld-loader.js
 !/dist/shacl-loader.js
 !/dist/shacl-module-loader.js
+# <ikigai-cell>'s source is hand-written; its packaged, content-hashed copy is generated.
+!/dist/ikigai-cell.js
+/dist/cell/
 /dist/*.wasm
 /dist/*.d.ts
 # Cargo.lock IS committed. This repo is an end product, not a library — it builds a
