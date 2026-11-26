@@ -61,11 +61,13 @@ ikigai-cell .ikc-run:focus-visible {
   outline-offset: 2px;
 }
 ikigai-cell .ikc-hint { font-size: 0.85em; }
-ikigai-cell .ikc-output:empty { display: none; }
 ikigai-cell .ikc-output {
   border-top: 1px solid var(--ikc-accent);
   padding-top: 6px;
 }
+/* Empty, the region stays rendered (not display: none), so it is in the accessibility tree
+   before its first update and that update is announced. */
+ikigai-cell .ikc-output:empty { border-top: 0; padding-top: 0; }
 ikigai-cell .ikc-line {
   margin: 0;
   white-space: pre-wrap;
