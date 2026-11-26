@@ -172,6 +172,12 @@ jobs:
       - name: Stamp cache-busting build id
         run: sed -i "s/__BUILD__/${GITHUB_SHA}/g" dist/index.html
 
+      # Publish the embeddable <ikigai-cell> package (ledger #4460) beside the demo, under
+      # content-hashed names with its manifest, so a host such as a slide deck can copy the
+      # files from one place. After the stamp: ikigai-cell.js is rewritten here, not there.
+      - name: Package the ikigai-cell element into dist/cell
+        run: scripts/package-cell.sh dist dist/cell
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
