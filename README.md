@@ -125,12 +125,21 @@ involved, and no file is fetched from any host but the page's own.
 <script type="application/ikigai-kernel+json">
 { "modules": ["fn"], "resources": [{ "iri": "urn:deck:note", "writable": true }] }
 </script>
+<!-- A module script is deferred: it runs once the whole document is parsed. -->
 <script type="module" src="ikigai/ikigai-cell.<hash>.js"></script>
 
 <ikigai-cell>source urn:iki:fn:toUpper hello</ikigai-cell>
 <ikigai-cell>sink urn:deck:note remember this</ikigai-cell>
 <ikigai-cell label="Read it back">source urn:deck:note</ikigai-cell>
 ```
+
+Load the element as a **deferred module**, as above: a plain `<script type="module">`, in
+the `<head>` or anywhere before the cells, with no `async`. A cell reads its code from its
+text content when the element first connects. If the element is already defined when the
+parser reaches a cell (an `async` module that arrives early, or an `import()` run before the
+cells are parsed), the cell connects before its text is parsed and its code is lost. A host
+that adds cells later (a slide framework rendering a slide) should insert each cell with its
+text already in it.
 
 ### The files to copy
 
@@ -186,8 +195,9 @@ empty declaration: nothing bound, nothing granted. Two blocks are an error.
   page.
 - **`capability`** (default none) lists the `urn:cap:` scopes every cell runs under. The
   session is **sealed** there, so `cap reset`, `login` and `logout` typed into a cell can
-  never rise above it, while `cap <scope…>` can still narrow it. There is no way to declare
-  root.
+  never rise above it, while `cap <scope…>` can still narrow it. A narrowing lasts for that
+  cell's run only: every run starts again from the declared capability, so one cell's
+  `cap` never changes what a later cell may do. There is no way to declare root.
 
 An unknown key, an unknown module, a scope outside `urn:cap:` or a malformed resource is
 refused with a reason, which every cell shows when it runs. A typo such as
@@ -200,6 +210,12 @@ A cell's code is its text content, one command per line, in the terminal's gramm
 (pipelines `|`, map `..`, fork `( a ; b )`, `key=value` arguments). Blank lines and `#`
 comments are skipped. Run executes the lines in order and stops at the first error. Runs are
 serialized across the page in the order they are asked for.
+
+The cells share the **kernel**: what one cell writes (a declared resource, a file) a later
+cell reads. They do not share the **session**: each run starts a fresh one at the declared
+capability, so a cell's `cap` narrowing, or a `:lisp` buffer it leaves open, ends with its
+run. Another tab of the origin writing the cells' `fs` files (`ikigai:fs:cell/<path>`)
+invalidates the cached reads of them here, as the demo page does for its `ws` files.
 
 | Attribute | Effect |
 |---|---|

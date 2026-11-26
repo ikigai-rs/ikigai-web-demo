@@ -86,6 +86,17 @@ test('cells share one kernel and run only what the page declared', async ({ page
   expect(results[0].results[0]).toMatchObject({ command: 'source urn:deck:greeting | urn:iki:fn:toUpper', kind: 'output', text: 'HELLO, SLIDES' });
 });
 
+test('a Lisp buffer one cell leaves open ends with its run, and the next cell answers', async ({ page }) => {
+  await page.goto(PAGE);
+  const code = cell(page, 3).getByRole('textbox');
+  // A cell that opens a Lisp buffer and leaves it open.
+  await code.fill(':lisp\n(+ 1 2)');
+  await run(page, 3);
+  await expect(cell(page, 3).getByRole('status')).toContainText('lisp mode');
+  await run(page, 0);
+  await expect(cell(page, 0).getByRole('status')).toContainText('HELLO, SLIDES');
+});
+
 test('a declaration the kernel refuses says why, in every cell', async ({ page }) => {
   await page.route('**/cell/index.html', async (route) => {
     const response = await route.fetch();
