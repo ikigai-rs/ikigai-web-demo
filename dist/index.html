@@ -248,10 +248,22 @@ pauseButton.addEventListener('click', () => {
   document.querySelector('.ctl-live')?.replaceChildren(document.createTextNode(updatesPaused ? 'paused' : 'live'));
 });
 let pendingTab = null;
+// The runbook tab a `.rb-tab` button opens, read from its `/k/` command the way the
+// `htmx:beforeRequest` handler reads it: decoded first. ikigai-runbook 0.5.1 writes the
+// command percent-encoded (`/k/source%20urn%3Arunbook%3Atimer%20as%3Dtext%2Fhtml`), so
+// matching `urn:runbook:` against the raw attribute finds nothing; 0.5.0's raw command
+// decodes to itself, so both read back the same tab id.
+function runbookTabId(button) {
+  const path = button?.getAttribute('hx-get');
+  if (!path || path.indexOf('/k/') === -1) return undefined;
+  let cmd;
+  try { cmd = decodeURIComponent(path.slice(path.indexOf('/k/') + 3)); } catch { return undefined; }
+  return cmd.match(/^source urn:runbook:([a-z0-9-]+)(?: |$)/)?.[1];
+}
 function updateLocation(push) {
   const view = document.querySelector('.ik-nav[aria-current]')?.textContent.trim() || 'Home';
   const tab = view === 'Demo' ? document.querySelector('.rb-tab[aria-selected=true]') : null;
-  const tabId = tab?.getAttribute('hx-get')?.match(/urn:runbook:([a-z0-9-]+)/)?.[1];
+  const tabId = runbookTabId(tab);
   const hash = '#' + view.toLowerCase() + (tabId ? '/' + tabId : '');
   document.title = `${view}${tab ? ' · ' + tab.textContent.trim() : ''} — ikigai`;
   if (location.hash !== hash && (push || !pendingTab)) {
@@ -309,7 +321,7 @@ function runKernel(cmd, target, swapStyle, navigate = false) {
         if (target.id === 'runbook' && pendingTab) {
           const tab = pendingTab;
           pendingTab = null;
-          const button = [...target.querySelectorAll('.rb-tab')].find(el => el.getAttribute('hx-get').includes(`urn:runbook:${tab} `));
+          const button = [...target.querySelectorAll('.rb-tab')].find(el => runbookTabId(el) === tab);
           if (button) {
             return runKernel(`source urn:runbook:${tab} as=text/html`, target, 'innerHTML').then(() => {
               target.querySelector('.rb-tab[aria-selected=true]')?.focus();

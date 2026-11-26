@@ -347,10 +347,10 @@ fn the_runbook_page_script_resolves_through_the_adapter() {
     );
 }
 
-/// Every `hx-get="/k/<command>"` in `html` rewritten the way ikigai-runbook 0.5.1 writes
-/// it (ikigai-runbook #47): the command percent-encoded as one path segment, then
-/// attribute-escaped. The `clear` button is left as it is.
-fn percent_encode_steps(html: &str) -> String {
+/// Every `hx-get="/k/<command>"` in `html` rewritten the way ikigai-runbook 0.5.0 and older
+/// wrote it: the command raw in the path (decoded, then attribute-escaped). The page must
+/// read a tab of either release the same.
+fn raw_steps(html: &str) -> String {
     let mut out = String::new();
     let mut rest = html;
     while let Some(at) = rest.find("hx-get=\"/k/") {
@@ -358,11 +358,23 @@ fn percent_encode_steps(html: &str) -> String {
         out.push_str(&rest[..start]);
         rest = &rest[start..];
         let end = rest.find('"').expect("a closed attribute");
-        out.push_str(&attr(&url_segment(&unescape(&rest[..end]))));
+        out.push_str(&attr(&k_command(&rest[..end])));
         rest = &rest[end..];
     }
     out.push_str(rest);
     out
+}
+
+/// The text of every `<code class="rb-cmd">` in `html`: the command each step shows the
+/// reader beside its button, attribute escaping reversed.
+fn shown_commands(html: &str) -> Vec<String> {
+    let tag = "<code class=\"rb-cmd\">";
+    html.match_indices(tag)
+        .map(|(at, _)| {
+            let rest = &html[at + tag.len()..];
+            unescape(&rest[..rest.find("</code>").expect("a closed code")])
+        })
+        .collect()
 }
 
 /// A step whose command holds a space, `?`, `#` and `%` reads back unchanged once it is
@@ -386,15 +398,67 @@ fn a_percent_encoded_step_reads_back_unchanged() {
     assert_eq!(steps(&page), vec!["echo it's \"a\" <b> & c?d#e"]);
 }
 
-/// A whole rendered tab, its steps re-encoded the 0.5.1 way, offers the same commands as
-/// the tab as this host renders it today, and those commands still run.
+/// A whole rendered tab, as ikigai-runbook 0.5.1 renders it: every step's `/k/` path is
+/// percent-encoded, it decodes to exactly the command the step shows beside its button, and
+/// that command runs. The same tab with its steps written raw, as 0.5.0 wrote them, offers
+/// the same commands.
 #[test]
-fn a_tab_offers_the_same_steps_percent_encoded() {
+fn a_tab_offers_its_steps_percent_encoded_and_they_run() {
     let s = session();
     let tab = run(&s.engine, "source urn:runbook:basics as=text/html").expect("renders");
     let plain = steps(&tab);
     assert!(!plain.is_empty(), "the Basics tab offers steps");
-    let encoded = percent_encode_steps(&tab);
-    assert_ne!(encoded, tab, "the re-encoding changed the HTML");
-    assert_eq!(steps(&encoded), plain);
+    assert_eq!(plain, shown_commands(&tab), "each step runs what it shows");
+    for (at, _) in tab.match_indices("class=\"rb-step\"") {
+        let rest = &tab[at..];
+        let value = &rest[rest.find("hx-get=\"/k/").expect("a step URL") + "hx-get=\"/k/".len()..];
+        let value = &value[..value.find('"').expect("a closed attribute")];
+        assert!(
+            !value.contains(' ') && value.contains('%') && k_command(value) != unescape(value),
+            "0.5.1 writes the step percent-encoded: `{value}`"
+        );
+    }
+    for cmd in &plain {
+        run(&s.engine, cmd).unwrap_or_else(|e| panic!("`{cmd}` runs: {e}"));
+    }
+
+    let raw = raw_steps(&tab);
+    assert_ne!(raw, tab, "the 0.5.0 rewrite changed the HTML");
+    assert!(raw.contains("hx-get=\"/k/source urn:fn:toUpper hello\""));
+    assert_eq!(steps(&raw), plain);
+}
+
+/// The tab strip names each tab the way `dist/index.html` reads it for its `#demo/<tab>`
+/// hash (`runbookTabId`): the `hx-get` after `/k/`, decoded, is
+/// `source urn:runbook:<id> ...`, and `<id>` is the button's own `rb-tab-<id>`. Matching
+/// `urn:runbook:` in the raw attribute, as the page did before 0.5.1, finds nothing now
+/// (the smoke saw `#demo` where it expected `#demo/timer`).
+#[test]
+fn the_tab_strip_names_each_tab_once_decoded() {
+    let s = session();
+    let tab = run(&s.engine, "source urn:runbook:basics as=text/html").expect("renders");
+    let mut ids = Vec::new();
+    for (at, _) in tab.match_indices("<button role=\"tab\" id=\"rb-tab-") {
+        let rest = &tab[at + "<button role=\"tab\" id=\"rb-tab-".len()..];
+        let own = &rest[..rest.find('"').expect("a closed id")];
+        let rest = &rest[rest.find("hx-get=\"/k/").expect("a tab URL") + "hx-get=\"/k/".len()..];
+        let value = &rest[..rest.find('"').expect("a closed attribute")];
+        let cmd = k_command(value);
+        let id = cmd
+            .strip_prefix("source urn:runbook:")
+            .and_then(|r| r.split(' ').next())
+            .unwrap_or_else(|| panic!("`{cmd}` names a runbook tab"));
+        assert_eq!(id, own, "the hash names the tab the button opens");
+        assert!(
+            id.chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'),
+            "`{id}` passes restoreLocation's /^[a-z0-9-]+$/"
+        );
+        run(&s.engine, &cmd).unwrap_or_else(|e| panic!("`{cmd}` renders: {e}"));
+        ids.push(id.to_string());
+    }
+    assert!(
+        ids.iter().any(|id| id == "timer"),
+        "the strip offers Timer: {ids:?}"
+    );
 }
