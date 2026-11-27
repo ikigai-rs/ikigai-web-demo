@@ -424,8 +424,8 @@ fn escaped_iri(text: &str) -> String {
 /// in through a data IRI rudof splices into `VALUES`) made THIS server connect out with no
 /// `urn:cap:net:*` in sight. Under the root capability the server resolves every call as,
 /// each probe must reach the stub zero times and come back a typed refusal naming the
-/// argument it arrived in. Before ikigai-shacl 0.3.2 the `select` probe connected and
-/// answered a report.
+/// argument it arrived in, or for the data probe a data graph parse error. Before
+/// ikigai-shacl 0.3.2 the `select` probe connected and answered a report.
 #[tokio::test(flavor = "multi_thread")]
 async fn the_native_server_never_lets_a_shapes_graph_reach_the_network() {
     let server = start();
@@ -464,8 +464,8 @@ async fn the_native_server_never_lets_a_shapes_graph_reach_the_network() {
             ),
             "shapes",
         ),
-        // From the DATA graph: a literal's datatype IRI, which rudof's reader does not
-        // re-validate and its evaluator writes into `VALUES ?this { … }` unescaped.
+        // From the DATA graph: a literal's datatype IRI, which older rudof readers did not
+        // re-validate and whose evaluator writes into `VALUES ?this { … }` unescaped.
         (
             "data-literal-datatype",
             format!("@prefix ex: <http://example.org/> .\nex:a ex:p \"v\"^^<{breakout}> .\n"),
@@ -510,8 +510,16 @@ async fn the_native_server_never_lets_a_shapes_graph_reach_the_network() {
                     name: got,
                     detail,
                 }) if got == arg && detail.contains("SERVICE") => {}
+                Reply::ErrorTyped(ikigai_wire::WireError::Endpoint(detail))
+                    if name == "data-literal-datatype"
+                        && detail.starts_with("urn:shacl:validate: data graph parse error:") => {}
                 other => wrong.push(format!(
-                    "{name}: expected a refusal naming `{arg}`, got {}",
+                    "{name}: expected a refusal naming `{arg}`{}, got {}",
+                    if name == "data-literal-datatype" {
+                        " or a data graph parse error"
+                    } else {
+                        ""
+                    },
                     match other {
                         Reply::Resolved(repr, _) =>
                             format!("a report: {}", String::from_utf8_lossy(&repr.bytes)),
